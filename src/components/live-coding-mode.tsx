@@ -7,7 +7,9 @@ import { useApiStatus } from "@/hooks/use-api-status";
 import { playMidi, stopMusic } from "@/lib/synth";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
 import type { MidiData, MidiNote } from "@/lib/midi";
-import { generateMockMidi } from "@/lib/midi";
+import { generateFreeMidi, generatePaidMidi } from "@/lib/midi";
+import { getTier, setTier, TIER_LIMITS } from "@/lib/billing";
+import type { Tier } from "@/lib/billing";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -49,6 +51,7 @@ playMidi(buildMidi(128));
 `;
 
 export function LiveCodingMode({ projectId }: { projectId: string }) {
+  const [tier, setTierState] = useState<Tier>(getTier);
   const [code, setCode] = useState(DEFAULT_CODE);
   const [output, setOutput] = useState<string[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -74,7 +77,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: aiPrompt, mode: "livecode" }),
+        body: JSON.stringify({ prompt: aiPrompt, mode: "livecode", tier }),
       });
       if (!res.ok) throw new Error("生成失敗");
       const data = await res.json();
@@ -154,10 +157,10 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
               }
             } catch { /* fallback */ }
           }
-          // Fallback: use mock MIDI
-          const mockMidi = generateMockMidi();
+          // Fallback: use tier-based MIDI
+          const mockMidi = tier === "paid" ? generatePaidMidi() : generateFreeMidi();
           setLastMidi(mockMidi);
-          addOutput("🎵 使用內建 MIDI 示範");
+          addOutput(`🎵 使用內建 ${tier === "paid" ? "編曲" : "循環"} MIDI 示範`);
         },
       };
 
@@ -187,14 +190,26 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        <div className="border-b p-2 flex items-center gap-2 bg-white">
+        <div className="border-b flex">
+          <div className="border-r px-2 flex items-center gap-1 bg-gray-50">
+            <button onClick={() => { setTierState("free"); setTier("free"); }}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                tier === "free" ? "bg-gray-800 text-white" : "text-gray-600 hover:bg-gray-200"
+              }`}>Free</button>
+            <button onClick={() => { setTierState("paid"); setTier("paid"); }}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                tier === "paid" ? "bg-purple-600 text-white" : "text-gray-600 hover:bg-gray-200"
+              }`}>Pro</button>
+          </div>
+          <div className="flex-1 flex items-center gap-2 px-2 py-1.5 bg-white">
           <input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAiGenerate()}
-            placeholder="用中文描述，AI 幫你寫 MIDI 程式碼..." className="flex-1 px-3 py-1.5 rounded-lg border text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500" />
+            placeholder={`用中文描述，${tier === "paid" ? "AI 幫你寫完整編曲" : "AI 幫你寫循環片段"}...`} className="flex-1 px-3 py-1.5 rounded-lg border text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500" />
           <button onClick={handleAiGenerate} disabled={isAiLoading || !aiPrompt.trim() || !apiStatus.configured}
             className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 disabled:opacity-50">
             {isAiLoading ? "生成中..." : "AI 幫我寫"}
           </button>
+        </div>
         </div>
 
         <div className="flex-1">

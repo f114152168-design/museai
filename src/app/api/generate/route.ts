@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMidiFromPrompt, generateLiveCodeFromPrompt, isOpenAIConfigured } from "@/lib/openai";
-import { generateMockMidi } from "@/lib/midi";
+import { generateFreeMidi, generatePaidMidi, loopMidi } from "@/lib/midi";
 
 export async function GET() {
   return NextResponse.json({
@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prompt, mode, bpm } = body;
+    const { prompt, mode, bpm, tier = "free" } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "請提供音樂描述" }, { status: 400 });
@@ -27,17 +27,24 @@ export async function POST(req: NextRequest) {
           { status: 503 }
         );
       }
-      const code = await generateLiveCodeFromPrompt(prompt, bpm ?? 120);
+      const code = await generateLiveCodeFromPrompt(prompt, tier, bpm ?? 120);
       return NextResponse.json({ code, prompt });
     }
 
-    // Default: generate MIDI data
-    let midi: ReturnType<typeof generateMockMidi>;
+    // Generate MIDI based on tier
+    let midi;
 
     if (isOpenAIConfigured()) {
-      midi = await generateMidiFromPrompt(prompt);
+      midi = await generateMidiFromPrompt(prompt, tier);
     } else {
-      midi = generateMockMidi(bpm ?? 120);
+      midi = tier === "paid" ? generatePaidMidi(bpm ?? 128) : generateFreeMidi(bpm ?? 120);
+    }
+
+    // Ensure duration limits
+    if (tier === "free") {
+      const maxFreeBeats = 32; // 8 bars
+      if (midi.totalBeats > maxFreeBeats) midi.totalBeats = maxFreeBeats;
+      midi = loopMidi(midi, 8);
     }
 
     return NextResponse.json({ type: "midi", data: midi, prompt });

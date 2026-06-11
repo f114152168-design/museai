@@ -5,8 +5,12 @@ import { useProjectStore } from "@/lib/store";
 import { playMidi, stopMusic } from "@/lib/synth";
 import { useApiStatus } from "@/hooks/use-api-status";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
-import type { MidiData } from "@/lib/midi";
+import { renderMidiToWav, downloadBlob } from "@/lib/audio-export";
+import { getDurationSeconds } from "@/lib/midi";
+import { getTier, setTier, TIER_LIMITS } from "@/lib/billing";
 import { PROMPT_PRESETS } from "@/lib/presets";
+import type { MidiData } from "@/lib/midi";
+import type { Tier } from "@/lib/billing";
 
 interface Message {
   role: "user" | "assistant";
@@ -20,24 +24,31 @@ export function ChatMode({ projectId }: { projectId: string }) {
   const addTrack = useProjectStore((s) => s.addTrack);
   const apiStatus = useApiStatus();
 
+  const [tier, setTierState] = useState<Tier>(getTier);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content: apiStatus.configured
-        ? "描述你想要的音樂，AI 會生成 MIDI 音符並播放。\n\n例如：「Deep House，120 BPM，C 小調，溫暖的貝斯和柔和 Pad」"
-        : "⚠️ OpenAI API 未串接，使用內建 MIDI 示範。\n\n描述你想要的音樂，或直接按發送聽範例。\n\n要啟用 AI 請在 .env 設定：\nOPENAI_API_KEY=\"sk-your-key\"",
+        ? "描述你想要的音樂，AI 會生成 MIDI 音符並播放。"
+        : "⚠️ OpenAI API 未串接，使用內建 MIDI 示範。",
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [currentMidi, setCurrentMidi] = useState<MidiData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleTierSwitch = (newTier: Tier) => {
+    setTierState(newTier);
+    setTier(newTier);
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isGenerating) return;
@@ -56,7 +67,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, mode: "chat" }),
+        body: JSON.stringify({ prompt, mode: "chat", tier }),
       });
 
       if (!res.ok) {
@@ -79,9 +90,14 @@ export function ChatMode({ projectId }: { projectId: string }) {
         .map((t) => `${t.name}(${t.notes.length})`)
         .join(", ");
 
+      const durationSec = getDurationSeconds(midi);
+      const durationDisplay = durationSec >= 60
+        ? `${Math.floor(durationSec / 60)}:${String(Math.floor(durationSec % 60)).padStart(2, "0")}`
+        : `${Math.floor(durationSec)}s`;
+
       const msg: Message = {
         role: "assistant",
-        content: `✅ 已生成 ${midi.tracks.length} 軌 · ${midi.bpm} BPM\n🎹 ${trackSummary}`,
+        content: `✅ ${tier === "paid" ? "Pro" : "Free"} · ${midi.bpm} BPM · ${durationDisplay}\n🎹 ${trackSummary}`,
         timestamp: new Date(),
         midi,
         type: "midi",
@@ -89,7 +105,6 @@ export function ChatMode({ projectId }: { projectId: string }) {
 
       setMessages((prev) => [...prev, msg]);
 
-      // Auto-play
       setIsPlaying(true);
       await playMidi(midi);
 
@@ -97,7 +112,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
         name: prompt.slice(0, 40),
         type: "MIDI",
         midiData: JSON.stringify(midi),
-        duration: (midi.totalBeats || 16) * (60 / midi.bpm),
+        duration: durationSec,
         order: Date.now(),
       });
 
@@ -130,6 +145,36 @@ export function ChatMode({ projectId }: { projectId: string }) {
     setIsPlaying(false);
   };
 
+  const handleExportWav = async (midi: MidiData) => {
+    if (tier === "free") {
+      const msg: Message = {
+        role: "assistant",
+        content: "💡 升級到 Pro 方案即可匯出 WAV/MP3 音檔！",
+        timestamp: new Date(),
+        type: "text",
+      };
+      setMessages((prev) => [...prev, msg]);
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const blob = await renderMidiToWav(midi);
+      downloadBlob(blob, `museai-${Date.now()}.wav`);
+    } catch (err) {
+      const msg: Message = {
+        role: "assistant",
+        content: `❌ 匯出失敗：${err instanceof Error ? err.message : "未知錯誤"}`,
+        timestamp: new Date(),
+        type: "error",
+      };
+      setMessages((prev) => [...prev, msg]);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const limits = TIER_LIMITS[tier];
+
   return (
     <div className="flex flex-col h-full bg-white">
       {!apiStatus.loading && !apiStatus.configured && (
@@ -140,6 +185,28 @@ export function ChatMode({ projectId }: { projectId: string }) {
         </div>
       )}
 
+      {/* Tier selector */}
+      <div className="border-b bg-gray-50 px-4 py-2 flex items-center gap-2">
+        <span className="text-xs text-gray-500 font-medium">方案：</span>
+        <button onClick={() => handleTierSwitch("free")}
+          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            tier === "free"
+              ? "bg-gray-800 text-white"
+              : "bg-white border text-gray-600 hover:bg-gray-100"
+          }`}>
+          Free · 30s 循環
+        </button>
+        <button onClick={() => handleTierSwitch("paid")}
+          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            tier === "paid"
+              ? "bg-purple-600 text-white"
+              : "bg-white border text-gray-600 hover:bg-gray-100"
+          }`}>
+          Pro · 最長 3 分鐘
+        </button>
+      </div>
+
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -154,14 +221,21 @@ export function ChatMode({ projectId }: { projectId: string }) {
                 <div className="mt-3 space-y-2">
                   <MidiInfo midi={msg.midi} />
                   <MidiRoll midi={msg.midi} />
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {isPlaying && currentMidi === msg.midi ? (
                       <button onClick={handleStop} className="px-3 py-1 rounded bg-red-500 text-white text-xs hover:bg-red-400">■ 停止</button>
                     ) : (
                       <button onClick={() => handleReplay(msg.midi!)} className="px-3 py-1 rounded bg-green-600 text-white text-xs hover:bg-green-500">▶ 播放</button>
                     )}
-                    <button onClick={() => downloadMidiJson(msg.midi!, `museai-${Date.now()}.json`)} className="px-3 py-1 rounded border text-gray-600 text-xs hover:bg-gray-50">
-                      匯出 JSON
+                    <button onClick={() => downloadMidiJson(msg.midi!, `museai-${Date.now()}.json`)}
+                      className="px-3 py-1 rounded border text-gray-600 text-xs hover:bg-gray-50">
+                      匯出 MIDI JSON
+                    </button>
+                    <button onClick={() => handleExportWav(msg.midi!)}
+                      disabled={isExporting || tier === "free"}
+                      className="px-3 py-1 rounded border text-gray-600 text-xs hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={tier === "free" ? "升級 Pro 即可匯出 WAV" : "匯出 WAV 音檔"}>
+                      {isExporting ? "渲染中..." : "匯出 WAV"}
                     </button>
                   </div>
                 </div>
@@ -179,7 +253,11 @@ export function ChatMode({ projectId }: { projectId: string }) {
                 <div className="w-1 h-4 bg-purple-500 rounded-full animate-waveform" />
                 <div className="w-1 h-6 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.1s" }} />
                 <div className="w-1 h-3 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.2s" }} />
-                <span className="text-sm text-gray-500 ml-1">{apiStatus.configured ? "AI 生成 MIDI 中..." : "產生 MIDI 示範..."}</span>
+                <span className="text-sm text-gray-500 ml-1">
+                  {apiStatus.configured
+                    ? `${tier === "paid" ? "AI 生成編曲中..." : "AI 生成循環中..."}`
+                    : "產生 MIDI 示範..."}
+                </span>
               </div>
             </div>
           </div>
@@ -187,6 +265,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input */}
       <div className="border-t px-4 pt-3 pb-2 bg-white">
         <div className="flex flex-wrap gap-1.5 mb-2">
           {PROMPT_PRESETS.map((preset) => (
@@ -202,7 +281,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="描述你想要的音樂，AI 會生成 MIDI..."
+            placeholder={`${tier === "paid" ? "描述完整編曲" : "描述循環片段"}，AI 會生成 MIDI...`}
             className="flex-1 px-4 py-2.5 rounded-lg border text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500"
             disabled={isGenerating}
           />
