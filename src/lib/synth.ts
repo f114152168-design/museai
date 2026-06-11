@@ -1,174 +1,404 @@
 import * as Tone from "tone";
 import type { MusicGenerationParams } from "@/lib/openai";
 
-let synthInitialized = false;
+let initialized = false;
 
 export async function initAudio() {
-  if (!synthInitialized) {
+  if (!initialized) {
     await Tone.start();
-    synthInitialized = true;
+    initialized = true;
   }
 }
 
-const synths: Record<string, Tone.PolySynth | Tone.MembraneSynth | Tone.MetalSynth | Tone.Synth> = {};
+// ── Master Chain ──────────────────────────────────────────
+const reverb = new Tone.Reverb({ decay: 2.5, wet: 0.15 }).toDestination();
+const delay = new Tone.FeedbackDelay("8n", 0.2).connect(reverb);
+const compressor = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.25 }).connect(delay);
+const masterGain = new Tone.Gain(0.8).connect(compressor);
 
-function getSynth(type: string) {
-  if (!synths[type]) {
-    switch (type) {
-      case "kick":
-      case "rhythmic":
-        synths[type] = new Tone.MembraneSynth().toDestination();
-        break;
-      case "hh":
-      case "fx":
-        synths[type] = new Tone.MetalSynth().toDestination();
-        break;
-      case "bass":
-        synths[type] = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: "sawtooth" },
-          envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.5 },
-        }).toDestination();
-        break;
-      case "pad":
-        synths[type] = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: "sine" },
-          envelope: { attack: 0.5, decay: 0.2, sustain: 0.8, release: 1.5 },
-        }).toDestination();
-        break;
-      default:
-        synths[type] = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: "square" },
-          envelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 0.3 },
-        }).toDestination();
-    }
+function connectToMaster(node: Tone.ToneAudioNode) {
+  node.connect(masterGain);
+}
+
+// ── Instruments ────────────────────────────────────────────
+interface InstrumentMap {
+  kick: Tone.MembraneSynth;
+  snare: Tone.NoiseSynth;
+  hihat: Tone.MetalSynth;
+  openhat: Tone.MetalSynth;
+  clap: Tone.NoiseSynth;
+  bass: Tone.PolySynth;
+  pad: Tone.PolySynth;
+  lead: Tone.PolySynth;
+  arp: Tone.PolySynth;
+  fx: Tone.MetalSynth;
+  [key: string]: Tone.ToneAudioNode | Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth;
+}
+
+const instruments: Partial<InstrumentMap> = {};
+
+function getOrCreateInstrument(name: string): Tone.ToneAudioNode {
+  if (instruments[name]) return instruments[name];
+
+  let inst: Tone.ToneAudioNode;
+
+  switch (name) {
+    // ── Drums ──
+    case "kick":
+      inst = new Tone.MembraneSynth({
+        pitchDecay: 0.02,
+        octaves: 5,
+        envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 },
+      }).connect(masterGain);
+      break;
+
+    case "snare":
+      inst = new Tone.NoiseSynth({
+        noise: { type: "white" },
+        envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 },
+      }).connect(masterGain);
+      break;
+
+    case "hihat":
+      inst = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.01 },
+        harmonicity: 5.1,
+        modulationIndex: 32,
+        resonance: 800,
+      }).connect(masterGain);
+      break;
+
+    case "openhat":
+      inst = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
+        harmonicity: 5.1,
+        modulationIndex: 32,
+        resonance: 800,
+      }).connect(masterGain);
+      break;
+
+    case "clap":
+      inst = new Tone.NoiseSynth({
+        noise: { type: "brown" },
+        envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.05 },
+      }).connect(masterGain);
+      break;
+
+    // ── Bass (FM synthesis = rich, warm) ──
+    case "bass":
+      inst = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 0.5,
+        modulationIndex: 2,
+        oscillator: { type: "sine" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.4 },
+        modulationEnvelope: { attack: 0.02, decay: 0.1, sustain: 0.2, release: 0.3 },
+      }).connect(masterGain);
+      break;
+
+    // ── Pad (AM synthesis = warm, evolving) ──
+    case "pad":
+      inst = new Tone.PolySynth(Tone.AMSynth, {
+        harmonicity: 1.5,
+        oscillator: { type: "sawtooth" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 2 },
+        modulationEnvelope: { attack: 0.5, decay: 0.2, sustain: 0.6, release: 1.5 },
+      }).connect(masterGain);
+      break;
+
+    // ── Lead (sync synth = punchy) ──
+    case "lead":
+      inst = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 2,
+        modulationIndex: 3,
+        oscillator: { type: "sawtooth" },
+        modulation: { type: "square" },
+        envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.3 },
+        modulationEnvelope: { attack: 0.05, decay: 0.05, sustain: 0.5, release: 0.2 },
+      }).connect(masterGain);
+      break;
+
+    // ── Arpeggio (clean, bright) ──
+    case "arp":
+      inst = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "square" },
+        envelope: { attack: 0.002, decay: 0.1, sustain: 0.1, release: 0.1 },
+      }).connect(masterGain);
+      break;
+
+    case "fx":
+      inst = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.2 },
+        harmonicity: 8,
+        modulationIndex: 64,
+        resonance: 2000,
+      }).connect(masterGain);
+      break;
+
+    default:
+      inst = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.2 },
+      }).connect(masterGain);
   }
-  return synths[type];
+
+  instruments[name] = inst as any;
+  return inst;
 }
 
-function getNoteFrequency(note: string): string {
-  return note;
-}
+// ── Scale / Note utilities ─────────────────────────────────
+const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-const PATTERNS: Record<string, number[]> = {
-  fourOnFloor: [0, 1, 0.5, 1],
-  offBeat: [0, 0, 1, 0.5],
-  halfTime: [0, 0.5, 0, 0.5],
-  walking: [0, 0.25, 0.5, 0.75],
-  arpeggio: [0, 0.25, 0.5, 0.75],
-  chordal: [0, 0.5],
-  random: [],
+const SCALE_INTERVALS: Record<string, number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
+  lydian: [0, 2, 4, 6, 7, 9, 11],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
 };
 
-export function playPattern(
-  instrument: { name: string; type: string; pattern: string; notes?: string[] },
-  bpm: number,
-  startTime: number = 0
-) {
-  const synth = getSynth(instrument.type);
-  const noteDuration = 60 / bpm;
-  const patternSteps = PATTERNS[instrument.pattern] ?? [0, 0.5];
-  const notes = instrument.notes ?? ["C4"];
-
-  const now = Tone.now() + startTime;
-
-  if (instrument.pattern === "random") {
-    for (let i = 0; i < 8; i++) {
-      const time = now + i * noteDuration * 0.5;
-      const note = notes[Math.floor(Math.random() * notes.length)];
-      const octaveOffset = Math.floor(Math.random() * 3) - 1;
-      const noteWithOctave = note.replace(/\d/, (m) => String(Number(m) + octaveOffset));
-      synth.triggerAttackRelease(noteWithOctave, `${noteDuration * 0.4}s`, time);
-    }
-    return;
-  }
-
-  for (let bar = 0; bar < 4; bar++) {
-    for (const step of patternSteps) {
-      const time = now + bar * 4 * noteDuration + step * noteDuration;
-      const note = notes[Math.floor(Math.random() * notes.length)];
-      const duration = instrument.type === "pad" ? `${noteDuration * 1.5}s` : `${noteDuration * 0.4}s`;
-      synth.triggerAttackRelease(note, duration, time);
-    }
-  }
+function noteName(root: string, semitoneOffset: number): string {
+  const rootIdx = NOTES.indexOf(root);
+  if (rootIdx === -1) return "C4";
+  const idx = (rootIdx + semitoneOffset + 12) % 12;
+  const octave = 4 + Math.floor((rootIdx + semitoneOffset) / 12);
+  return `${NOTES[idx]}${octave}`;
 }
 
-export async function playMusicParams(params: MusicGenerationParams): Promise<void> {
+function getScaleNotes(root: string, scale: string): string[] {
+  const intervals = SCALE_INTERVALS[scale] ?? SCALE_INTERVALS.major;
+  const notes: string[] = [];
+  for (let oct = -1; oct <= 2; oct++) {
+    for (const interval of intervals) {
+      notes.push(noteName(root, interval + oct * 12));
+    }
+  }
+  return notes;
+}
+
+// ── Pattern engine ─────────────────────────────────────────
+function getRandomNote(scaleNotes: string[], octaveShift: number = 0): string {
+  const base = scaleNotes[Math.floor(Math.random() * scaleNotes.length)];
+  const noteMatch = base.match(/^([A-G]#?)(\d)$/);
+  if (!noteMatch) return "C4";
+  return `${noteMatch[1]}${Number(noteMatch[2]) + octaveShift}`;
+}
+
+interface PatternStep {
+  time: string;
+  note?: string;
+  duration: string;
+  velocity?: number;
+}
+
+function generatePattern(
+  type: string,
+  instrumentName: string,
+  notes: string[],
+  bpm: number,
+  scaleNotes: string[],
+  bars: number = 4
+): PatternStep[] {
+  const steps: PatternStep[] = [];
+  const beatDuration = 60 / bpm;
+
+  switch (type) {
+    // ── Rhythmic patterns ──
+    case "fourOnFloor": {
+      for (let bar = 0; bar < bars; bar++) {
+        for (let beat = 0; beat < 4; beat++) {
+          steps.push({
+            time: `+${(bar * 4 + beat) * beatDuration}`,
+            note: notes[0],
+            duration: `${beatDuration * 0.9}s`,
+            velocity: 0.8 + Math.random() * 0.2,
+          });
+        }
+      }
+      break;
+    }
+
+    case "offBeat": {
+      for (let bar = 0; bar < bars; bar++) {
+        for (let beat = 0; beat < 4; beat++) {
+          const offTime = bar * 4 + beat + 0.5;
+          steps.push({
+            time: `+${offTime * beatDuration}`,
+            note: notes[Math.floor(Math.random() * notes.length)],
+            duration: `${beatDuration * 0.3}s`,
+            velocity: 0.3 + Math.random() * 0.3,
+          });
+        }
+      }
+      break;
+    }
+
+    case "halfTime": {
+      for (let bar = 0; bar < bars; bar++) {
+        steps.push({
+          time: `+${bar * 4 * beatDuration}`,
+          note: notes[0],
+          duration: `${beatDuration * 0.9}s`,
+        });
+        steps.push({
+          time: `+${(bar * 4 + 2) * beatDuration}`,
+          note: notes[0],
+          duration: `${beatDuration * 0.9}s`,
+        });
+      }
+      break;
+    }
+
+    // ── Melodic patterns ──
+    case "walking": {
+      for (let bar = 0; bar < bars; bar++) {
+        for (let step = 0; step < 4; step++) {
+          const note = notes[Math.floor(Math.random() * notes.length)] || getRandomNote(scaleNotes, -1);
+          steps.push({
+            time: `+${(bar * 4 + step) * beatDuration}`,
+            note,
+            duration: `${beatDuration * 0.7}s`,
+            velocity: 0.6 + Math.random() * 0.3,
+          });
+        }
+      }
+      break;
+    }
+
+    case "arpeggio": {
+      for (let bar = 0; bar < bars; bar++) {
+        for (let i = 0; i < 8; i++) {
+          const note = notes[i % notes.length] || getRandomNote(scaleNotes);
+          const stripped = note.replace(/\d/, "");
+          const oct = Math.floor(i / notes.length);
+          const noteWithOct = `${stripped}${4 + oct}`;
+          steps.push({
+            time: `+${(bar * 4 + i * 0.5) * beatDuration}`,
+            note: noteWithOct,
+            duration: `${beatDuration * 0.35}s`,
+            velocity: 0.5 + Math.random() * 0.3,
+          });
+        }
+      }
+      break;
+    }
+
+    case "chordal": {
+      for (let bar = 0; bar < bars; bar++) {
+        const chordNotes = notes.slice(0, Math.min(3, notes.length));
+        for (const note of chordNotes) {
+          steps.push({
+            time: `+${bar * 4 * beatDuration}`,
+            note,
+            duration: `${beatDuration * 3.5}s`,
+            velocity: 0.5,
+          });
+        }
+      }
+      break;
+    }
+
+    case "random": {
+      for (let i = 0; i < bars * 8; i++) {
+        const note = getRandomNote(scaleNotes);
+        steps.push({
+          time: `+${i * beatDuration * 0.5}`,
+          note,
+          duration: `${beatDuration * 0.35}s`,
+          velocity: 0.3 + Math.random() * 0.5,
+        });
+      }
+      break;
+    }
+
+    default: {
+      // custom / unknown pattern: play notes sequentially
+      for (let bar = 0; bar < bars; bar++) {
+        for (let i = 0; i < notes.length; i++) {
+          steps.push({
+            time: `+${(bar * 4 + i * (4 / notes.length)) * beatDuration}`,
+            note: notes[i],
+            duration: `${beatDuration * 0.5}s`,
+            velocity: 0.7,
+          });
+        }
+      }
+    }
+  }
+
+  return steps;
+}
+
+// ── Public API ──────────────────────────────────────────────
+export async function generateAndPlayMusic(
+  params: MusicGenerationParams,
+  onProgress?: (msg: string) => void
+): Promise<void> {
   await initAudio();
 
-  Tone.Transport.bpm.value = params.bpm;
+  const scaleNotes = getScaleNotes(params.key, params.scale);
+  const bpm = params.bpm;
+  const bars = 4;
+
+  Tone.Transport.bpm.value = bpm;
   Tone.Transport.stop();
   Tone.Transport.cancel();
 
-  const noteDuration = 60 / params.bpm;
-  let totalDuration = 0;
+  onProgress?.(`${params.bpm} BPM · ${params.key} ${params.scale}`);
 
-  // Schedule each instrument
-  for (let i = 0; i < params.instruments.length; i++) {
-    const inst = params.instruments[i];
-    const synth = getSynth(inst.type);
-    const patternSteps = PATTERNS[inst.pattern] ?? [0, 0.5];
-    const notes = inst.notes ?? ["C4"];
+  for (const inst of params.instruments) {
+    const synth = getOrCreateInstrument(inst.type || "lead") as any;
+    const patternType = inst.pattern || "fourOnFloor";
+    const notes = inst.notes?.length ? inst.notes : [getRandomNote(scaleNotes)];
 
-    const instrumentDuration = 16 * noteDuration; // 4 bars default
-    totalDuration = Math.max(totalDuration, instrumentDuration);
+    onProgress?.(`🎹 ${inst.name} (${patternType})`);
 
-    if (inst.pattern === "random") {
-      for (let beat = 0; beat < 32; beat++) {
-        const time = `+${beat * noteDuration * 0.5}`;
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        Tone.getDraw().schedule(() => {
-          synth.triggerAttackRelease(note, `${noteDuration * 0.4}s`);
-        }, time);
-      }
-      continue;
-    }
+    const steps = generatePattern(patternType, inst.name, notes, bpm, scaleNotes, bars);
 
-    for (let bar = 0; bar < 4; bar++) {
-      for (const step of patternSteps) {
-        const beatInBar = step;
-        const time = `+${(bar * 4 + beatInBar) * noteDuration}`;
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        const dur = inst.type === "pad" ? `${noteDuration * 1.5}s` : `${noteDuration * 0.4}s`;
-
-        Tone.getDraw().schedule(() => {
-          synth.triggerAttackRelease(note, dur);
-        }, time);
-      }
+    for (const step of steps) {
+      Tone.getDraw().schedule(() => {
+        if (synth.triggerAttackRelease) {
+          synth.triggerAttackRelease(step.note || notes[0], step.duration, undefined, step.velocity);
+        }
+      }, step.time);
     }
   }
 
+  const totalDuration = bars * 4 * (60 / bpm);
+  onProgress?.("▶ 播放中...");
   Tone.Transport.start();
 
-  // Auto-stop after duration
-  await new Promise((resolve) => setTimeout(resolve, totalDuration * 1000 + 2000));
+  await new Promise((resolve) => setTimeout(resolve, totalDuration * 1000 + 1500));
   Tone.Transport.stop();
+  onProgress?.("✓ 播放完成");
 }
 
 export function stopMusic() {
   Tone.Transport.stop();
   Tone.Transport.cancel();
-  for (const key of Object.keys(synths)) {
-    synths[key].disconnect();
-    delete synths[key];
-  }
+  Object.keys(instruments).forEach((key) => {
+    delete instruments[key];
+  });
 }
 
 export async function playNotes(
-  notes: Array<{ note: string; duration: number; instrument?: string }>,
+  noteList: Array<{ note: string; duration: number; instrument?: string }>,
   bpm: number = 120
 ) {
   await initAudio();
   Tone.Transport.bpm.value = bpm;
 
-  const noteDuration = 60 / bpm;
+  const beatDuration = 60 / bpm;
   let time = 0;
 
-  for (const n of notes) {
-    const synth = getSynth(n.instrument ?? "default");
-    const delay = time * noteDuration;
+  for (const n of noteList) {
+    const synth = getOrCreateInstrument(n.instrument || "lead") as any;
+    const delay = time * beatDuration;
     const timeStr = `+${delay}`;
     Tone.getDraw().schedule(() => {
-      synth.triggerAttackRelease(n.note, `${n.duration * noteDuration * 0.8}s`);
+      synth.triggerAttackRelease?.(n.note, `${n.duration * beatDuration * 0.9}s`);
     }, timeStr);
     time += n.duration;
   }
@@ -176,60 +406,6 @@ export async function playNotes(
   Tone.Transport.start();
 }
 
-export async function generateAndPlayMusic(
-  params: MusicGenerationParams,
-  onProgress?: (msg: string) => void
-): Promise<void> {
-  onProgress?.("初始化音訊引擎...");
-  await initAudio();
-
-  onProgress?.(`設定 BPM: ${params.bpm}，調性: ${params.key} ${params.scale}`);
-
-  Tone.Transport.bpm.value = params.bpm;
-  Tone.Transport.stop();
-  Tone.Transport.cancel();
-
-  const noteDuration = 60 / params.bpm;
-  let totalDuration = 0;
-
-  for (let i = 0; i < params.instruments.length; i++) {
-    const inst = params.instruments[i];
-    onProgress?.(`編排 ${inst.name} (${inst.type}) - ${inst.pattern}`);
-    const synth = getSynth(inst.type);
-    const patternSteps = PATTERNS[inst.pattern] ?? [0, 0.5];
-    const notes = inst.notes ?? ["C4"];
-
-    const instrumentDuration = 16 * noteDuration;
-    totalDuration = Math.max(totalDuration, instrumentDuration);
-
-    if (inst.pattern === "random") {
-      for (let beat = 0; beat < 32; beat++) {
-        const time = `+${beat * noteDuration * 0.5}`;
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        Tone.getDraw().schedule(() => {
-          synth.triggerAttackRelease(note, `${noteDuration * 0.4}s`);
-        }, time);
-      }
-      continue;
-    }
-
-    for (let bar = 0; bar < 4; bar++) {
-      for (const step of patternSteps) {
-        const beatInBar = step;
-        const time = `+${(bar * 4 + beatInBar) * noteDuration}`;
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        const dur = inst.type === "pad" ? `${noteDuration * 1.5}s` : `${noteDuration * 0.4}s`;
-        Tone.getDraw().schedule(() => {
-          synth.triggerAttackRelease(note, dur);
-        }, time);
-      }
-    }
-  }
-
-  onProgress?.("播放中...");
-  Tone.Transport.start();
-
-  await new Promise((resolve) => setTimeout(resolve, totalDuration * 1000 + 2000));
-  Tone.Transport.stop();
-  onProgress?.("播放完成");
+export async function playMusicParams(params: MusicGenerationParams): Promise<void> {
+  return generateAndPlayMusic(params);
 }
