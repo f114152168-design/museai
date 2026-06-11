@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #030712;
-  --foreground: #f8fafc;
-  --primary: #a855f7;
-  --primary-hover: #9333ea;
-  --secondary: #1e293b;
-  --accent: #06b6d4;
-  --border: #334155;
+  --background: #ffffff;
+  --foreground: #111827;
+  --primary: #7c3aed;
+  --primary-hover: #6d28d9;
+  --secondary: #f1f5f9;
+  --accent: #0891b2;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --card: #f8fafc;
 }
 
 @theme inline {
@@ -18,6 +20,8 @@
   --color-secondary: var(--secondary);
   --color-accent: var(--accent);
   --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -35,7 +39,7 @@ body {
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    scrollbar-color: #cbd5e1 transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
@@ -45,14 +49,14 @@ body {
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: var(--border);
+    background-color: #cbd5e1;
     border-radius: 3px;
   }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(168, 85, 247, 0.6); }
+  0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.15); }
+  50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.3); }
 }
 
 .animate-pulse-glow {

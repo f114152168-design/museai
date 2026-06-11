@@ -11,9 +11,9 @@ import { cn } from "@/lib/utils";
 type Mode = "chat" | "timeline" | "livecode";
 
 const modes: { key: Mode; label: string; icon: string }[] = [
-  { key: "chat", label: "Chat", icon: "💬" },
-  { key: "timeline", label: "Timeline", icon: "🎛️" },
-  { key: "livecode", label: "Live Code", icon: "⌨️" },
+  { key: "chat", label: "聊天生成", icon: "💬" },
+  { key: "timeline", label: "時間軸", icon: "🎛️" },
+  { key: "livecode", label: "即時編程", icon: "⌨️" },
 ];
 
 export default function ProjectEditor() {
@@ -35,13 +35,13 @@ export default function ProjectEditor() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-2">Project not found</h2>
-          <p className="text-gray-400">This project doesn't exist or has been deleted.</p>
+          <h2 className="text-xl font-bold mb-2">找不到專案</h2>
+          <p className="text-gray-500">此專案不存在或已被刪除。</p>
           <button
             onClick={() => router.push("/dashboard")}
             className="mt-4 px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-500"
           >
-            Back to Dashboard
+            返回儀表板
           </button>
         </div>
       </div>
@@ -56,30 +56,28 @@ export default function ProjectEditor() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Project Header */}
-      <div className="border-b border-gray-800 px-4 py-2 flex items-center justify-between">
+      <div className="border-b px-4 py-2 flex items-center justify-between bg-white">
         <div className="flex items-center gap-3">
           <input
             type="text"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             onBlur={() => updateProject(id, { name: projectName })}
-            className="bg-transparent text-lg font-semibold focus:outline-none focus:bg-gray-800 px-2 py-1 rounded"
+            className="bg-transparent text-lg font-semibold focus:outline-none focus:bg-gray-50 px-2 py-1 rounded"
           />
-          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
             {project.bpm} BPM
           </span>
-          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
             {project.key} {project.scale}
           </span>
-          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
             {project.timeSignature}
           </span>
         </div>
       </div>
 
-      {/* Mode Tabs */}
-      <div className="border-b border-gray-800 px-4 flex">
+      <div className="border-b px-4 flex bg-white">
         {modes.map((m) => (
           <button
             key={m.key}
@@ -87,8 +85,8 @@ export default function ProjectEditor() {
             className={cn(
               "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
               mode === m.key
-                ? "border-purple-500 text-purple-400"
-                : "border-transparent text-gray-500 hover:text-gray-300"
+                ? "border-purple-500 text-purple-600"
+                : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             <span>{m.icon}</span>
@@ -96,13 +94,12 @@ export default function ProjectEditor() {
           </button>
         ))}
         {project.tracks.length > 0 && (
-          <div className="ml-auto flex items-center text-xs text-gray-500">
-            {project.tracks.length} track{project.tracks.length !== 1 ? "s" : ""}
+          <div className="ml-auto flex items-center text-xs text-gray-400">
+            {project.tracks.length} 軌
           </div>
         )}
       </div>
 
-      {/* Mode Content */}
       <div className="flex-1 overflow-hidden">
         <ModeComponent projectId={id} />
       </div>

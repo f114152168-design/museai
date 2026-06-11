@@ -6,36 +6,36 @@ import { useProjectStore } from "@/lib/store";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-const DEFAULT_CODE = `// Museai Live Coding
-// Use these functions to create music:
+const DEFAULT_CODE = `// Museai 即時編程
+// 使用這些函數來創作音樂：
 //
-// play(note, duration, instrument) - Play a single note
-//   note: "C4", "D#3", "A4" etc.
-//   duration: 0.25, 0.5, 1, 2 etc. (in beats)
-//   instrument: "sine", "square", "sawtooth", "triangle"
+// play(音符, 拍長, 音色) - 播放單音
+//   音符: "C4", "D#3", "A4" 等
+//   拍長: 0.25, 0.5, 1, 2 等（以拍為單位）
+//   音色: "sine", "square", "sawtooth", "triangle"
 //
-// sequence(notes) - Play a sequence of notes
-//   notes: Array of { note, duration, instrument }
+// sequence(音符陣列) - 播放一段旋律
+//   音符陣列: [{ note, duration, instrument }]
 //
-// pattern(name, notes) - Define a reusable pattern
+// pattern(名稱, 音符陣列) - 定義可重複的模式
 // pattern("kick", [
 //   { note: "C2", duration: 1 },
 //   { note: "C2", duration: 0.5 },
 // ])
 // playPattern("kick")
 //
-// setBpm(bpm) - Change tempo
-// setVolume(0.8) - Master volume (0 to 1)
+// setBpm(bpm) - 改變速度
+// setVolume(0.8) - 主音量 (0 到 1)
 
 setBpm(120);
 setVolume(0.7);
 
-// Four-on-the-floor kick
+// 四地板大鼓
 pattern("kick", [
   { note: "C2", duration: 1, instrument: "sine" },
 ]);
 
-// Hi-hat pattern
+// 開合鈸
 pattern("hat", [
   { note: "C5", duration: 0.25, instrument: "triangle" },
   { note: "C5", duration: 0.25, instrument: "triangle" },
@@ -43,7 +43,7 @@ pattern("hat", [
   { note: "C5", duration: 0.25, instrument: "triangle" },
 ]);
 
-// Bassline
+// 貝斯線
 pattern("bass", [
   { note: "C3", duration: 1, instrument: "sawtooth" },
   { note: "E3", duration: 1, instrument: "sawtooth" },
@@ -51,11 +51,11 @@ pattern("bass", [
   { note: "A3", duration: 0.5, instrument: "sawtooth" },
 ]);
 
-// Play patterns
+// 播放模式
 playPattern("kick");
 playPattern("hat");
 
-// Add melody
+// 加入旋律
 sequence([
   { note: "C4", duration: 0.5, instrument: "square" },
   { note: "E4", duration: 0.5, instrument: "square" },
@@ -65,8 +65,8 @@ sequence([
   { note: "E4", duration: 1, instrument: "square" },
 ]);
 
-// Generate AI track
-generate("Add a warm pad in the background");
+// 用 AI 生成背景音
+generate("加入溫暖的 Pad 音色");
 `;
 
 export function LiveCodingMode({ projectId }: { projectId: string }) {
@@ -77,7 +77,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
   const addTrack = useProjectStore((s) => s.addTrack);
 
   const addOutput = (msg: string) => {
-    setOutput((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+    setOutput((prev) => [...prev, `[${new Date().toLocaleTimeString("zh-TW")}] ${msg}`]);
   };
 
   const handleRun = useCallback(async () => {
@@ -118,11 +118,11 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
       const evalEnv = {
         setBpm: (newBpm: number) => {
           bpm = Math.max(60, Math.min(200, newBpm));
-          addOutput(`BPM set to ${bpm}`);
+          addOutput(`速度設為 ${bpm}`);
         },
         setVolume: (vol: number) => {
           volume = Math.max(0, Math.min(1, vol));
-          addOutput(`Volume set to ${volume}`);
+          addOutput(`音量設為 ${volume}`);
         },
         play: (note: string, duration: number, instrument = "sine") => {
           playNote(note, duration, instrument);
@@ -133,16 +133,16 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             playNote(n.note, n.duration, n.instrument || "sine", time);
             time += n.duration;
           }
-          addOutput(`Playing sequence (${notes.length} notes)`);
+          addOutput(`播放旋律（${notes.length} 個音符）`);
         },
         pattern: (name: string, notes: Array<{ note: string; duration: number; instrument?: string }>) => {
           patterns.set(name, notes);
-          addOutput(`Pattern "${name}" defined (${notes.length} steps)`);
+          addOutput(`已定義模式「${name}」（${notes.length} 步）`);
         },
         playPattern: (name: string) => {
           const notes = patterns.get(name);
           if (!notes) {
-            addOutput(`Pattern "${name}" not found`);
+            addOutput(`找不到模式「${name}」`);
             return;
           }
           let time = 0;
@@ -150,10 +150,10 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             playNote(n.note, n.duration, n.instrument || "sine", time);
             time += n.duration;
           }
-          addOutput(`Playing pattern "${name}"`);
+          addOutput(`播放模式「${name}」`);
         },
         generate: (prompt: string) => {
-          addOutput(`AI generation: "${prompt}"`);
+          addOutput(`AI 生成：「${prompt}」`);
           addTrack(projectId, {
             name: prompt.slice(0, 40),
             type: "AUDIO",
@@ -161,16 +161,16 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             duration: 30,
             order: Date.now(),
           });
-          addOutput("Track added to project!");
+          addOutput("已加入音軌！");
         },
       };
 
       const fn = new Function(...Object.keys(evalEnv), code);
       await fn(...Object.values(evalEnv));
 
-      addOutput("Code executed successfully!");
+      addOutput("執行完畢！");
     } catch (err) {
-      addOutput(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      addOutput(`錯誤：${err instanceof Error ? err.message : "未知錯誤"}`);
     } finally {
       setTimeout(() => setIsPlaying(false), 500);
     }
@@ -182,17 +182,16 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
       audioContextRef.current = null;
     }
     setIsPlaying(false);
-    addOutput("Playback stopped");
+    addOutput("已停止播放");
   };
 
   return (
-    <div className="flex h-full">
-      {/* Editor */}
-      <div className="flex-1 flex flex-col border-r border-gray-800">
+    <div className="flex h-full bg-white">
+      <div className="flex-1 flex flex-col border-r">
         <div className="flex-1">
           <MonacoEditor
             language="javascript"
-            theme="vs-dark"
+            theme="light"
             value={code}
             onChange={(val) => setCode(val ?? "")}
             options={{
@@ -205,34 +204,33 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             }}
           />
         </div>
-        <div className="border-t border-gray-800 p-2 flex items-center gap-2">
+        <div className="border-t p-2 flex items-center gap-2 bg-white">
           <button
             onClick={handleRun}
             disabled={isPlaying}
             className="px-4 py-1.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 disabled:opacity-50 flex items-center gap-1.5"
           >
-            <span>▶</span> Run
+            <span>▶</span> 執行
           </button>
           <button
             onClick={handleStop}
-            className="px-4 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-500 disabled:opacity-50 flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-400 disabled:opacity-50 flex items-center gap-1.5"
           >
-            <span>■</span> Stop
+            <span>■</span> 停止
           </button>
         </div>
       </div>
 
-      {/* Output panel */}
-      <div className="w-80 flex flex-col bg-gray-950">
-        <div className="text-xs text-gray-500 px-3 py-2 border-b border-gray-800 font-medium">
-          Output
+      <div className="w-80 flex flex-col">
+        <div className="text-xs text-gray-500 px-3 py-2 border-b font-medium bg-white">
+          輸出
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin bg-white">
           {output.length === 0 ? (
-            <p className="text-xs text-gray-600">Click Run to execute the code</p>
+            <p className="text-xs text-gray-400">點擊「執行」來執行程式碼</p>
           ) : (
             output.map((line, i) => (
-              <p key={i} className="text-xs text-gray-400 font-mono">{line}</p>
+              <p key={i} className="text-xs text-gray-600 font-mono">{line}</p>
             ))
           )}
         </div>

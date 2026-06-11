@@ -23,38 +23,38 @@ export default function NewProject() {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6">New Project</h1>
+        <h1 className="text-2xl font-bold mb-6">新增專案</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Project Name</label>
+            <label className="block text-sm font-medium text-gray-500 mb-1">專案名稱</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My New Track"
-              className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+              placeholder="我的新作品"
+              className="w-full px-3 py-2 rounded-lg border text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500"
               required
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">BPM</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">BPM</label>
               <input
                 type="number"
                 value={bpm}
                 onChange={(e) => setBpm(Number(e.target.value))}
                 min={60}
                 max={200}
-                className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white focus:outline-none focus:border-purple-500"
+                className="w-full px-3 py-2 rounded-lg border text-gray-900 focus:outline-none focus:border-purple-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Key</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">調性</label>
               <select
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white focus:outline-none focus:border-purple-500"
+                className="w-full px-3 py-2 rounded-lg border text-gray-900 bg-white focus:outline-none focus:border-purple-500"
               >
                 {["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].map((k) => (
                   <option key={k} value={k}>{k}</option>
@@ -62,18 +62,18 @@ export default function NewProject() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Scale</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">音階</label>
               <select
                 value={scale}
                 onChange={(e) => setScale(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white focus:outline-none focus:border-purple-500"
+                className="w-full px-3 py-2 rounded-lg border text-gray-900 bg-white focus:outline-none focus:border-purple-500"
               >
-                <option value="major">Major</option>
-                <option value="minor">Minor</option>
-                <option value="dorian">Dorian</option>
-                <option value="phrygian">Phrygian</option>
-                <option value="lydian">Lydian</option>
-                <option value="mixolydian">Mixolydian</option>
+                <option value="major">大調</option>
+                <option value="minor">小調</option>
+                <option value="dorian">多利安</option>
+                <option value="phrygian">弗里吉安</option>
+                <option value="lydian">利底安</option>
+                <option value="mixolydian">混合利底安</option>
               </select>
             </div>
           </div>
@@ -82,7 +82,7 @@ export default function NewProject() {
             type="submit"
             className="w-full py-2.5 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors"
           >
-            Create Project
+            建立專案
           </button>
         </form>
       </div>
