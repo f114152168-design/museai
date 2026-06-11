@@ -2,21 +2,14 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useProjectStore } from "@/lib/store";
+import { generateAndPlayMusic, stopMusic, initAudio } from "@/lib/synth";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
   audioUrl?: string;
-}
-
-function generateMockAudioUrl(): string {
-  const demoAudios = [
-    "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg",
-    "https://actions.google.com/sounds/v1/cartoon/birds_chirping_single.ogg",
-    "https://actions.google.com/sounds/v1/weather/rain.ogg",
-  ];
-  return demoAudios[Math.floor(Math.random() * demoAudios.length)];
+  isMusic?: boolean;
 }
 
 export function ChatMode({ projectId }: { projectId: string }) {
@@ -24,12 +17,13 @@ export function ChatMode({ projectId }: { projectId: string }) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "描述你想要的音樂。例如：「製作一首 Deep House，溫暖的貝斯加上柔和的 Pad 音色，120 BPM，C 小調。」",
+      content: "描述你想要的音樂，例如：「製作一首 Deep House，溫暖的貝斯加上柔和的 Pad 音色，120 BPM，C 小調。」\n\n我會用 AI 分析你的描述，然後即時合成音樂。",
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,33 +39,74 @@ export function ChatMode({ projectId }: { projectId: string }) {
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMessage]);
+    const prompt = input.trim();
     setInput("");
     setIsGenerating(true);
 
-    setTimeout(() => {
-      const audioUrl = generateMockAudioUrl();
-      const cleanPrompt = input.trim().slice(0, 60);
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, mode: "chat" }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "生成失敗");
+      }
+
+      const params = await res.json();
+
+      const progressMessages: string[] = [];
+      let progressIndex = 0;
+
+      await generateAndPlayMusic(params, (msg) => {
+        progressMessages.push(msg);
+      });
+
+      setIsPlaying(true);
+
+      const description = `✅ ${params.description || prompt.slice(0, 60)}\n🎵 BPM: ${params.bpm} | 調性: ${params.key} ${params.scale}\n🎸 樂器: ${params.instruments.map((i: { name: string }) => i.name).join(", ")}`;
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `已生成：「${cleanPrompt}${input.trim().length > 60 ? "..." : ""}」\n\nBPM: 120 | 調性: C min | 長度: 30s`,
+          content: description,
           timestamp: new Date(),
-          audioUrl,
+          isMusic: true,
         },
       ]);
 
       addTrack(projectId, {
-        name: cleanPrompt,
+        name: prompt.slice(0, 40),
         type: "AUDIO",
-        audioUrl,
+        audioUrl: "",
         duration: 30,
         order: Date.now(),
       });
-
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `❌ ${error instanceof Error ? error.message : "生成失敗"}`,
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
       setIsGenerating(false);
-    }, 2500);
+    }
+  };
+
+  const handleStop = () => {
+    stopMusic();
+    setIsPlaying(false);
+  };
+
+  const handleRetry = () => {
+    stopMusic();
+    setIsPlaying(false);
   };
 
   return (
@@ -87,10 +122,19 @@ export function ChatMode({ projectId }: { projectId: string }) {
               }`}
             >
               <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              {msg.audioUrl && (
-                <audio controls src={msg.audioUrl} className="mt-2 w-full max-w-xs">
-                  您的瀏覽器不支援此音訊格式。
-                </audio>
+              {msg.isMusic && (
+                <div className="mt-2 flex items-center gap-2">
+                  {isPlaying ? (
+                    <button
+                      onClick={handleStop}
+                      className="px-3 py-1 rounded bg-red-500 text-white text-xs hover:bg-red-400"
+                    >
+                      停止播放
+                    </button>
+                  ) : (
+                    <span className="text-xs text-green-600">✓ 已播放完畢</span>
+                  )}
+                </div>
               )}
               <p className="text-xs opacity-50 mt-1">
                 {msg.timestamp.toLocaleTimeString("zh-TW")}
@@ -100,11 +144,13 @@ export function ChatMode({ projectId }: { projectId: string }) {
         ))}
         {isGenerating && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-xl px-4 py-3 flex items-center gap-2">
-              <div className="w-1 h-4 bg-purple-500 rounded-full animate-waveform" />
-              <div className="w-1 h-6 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.1s" }} />
-              <div className="w-1 h-3 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.2s" }} />
-              <span className="text-sm text-gray-500 ml-1">生成中...</span>
+            <div className="bg-gray-100 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="w-1 h-4 bg-purple-500 rounded-full animate-waveform" />
+                <div className="w-1 h-6 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.1s" }} />
+                <div className="w-1 h-3 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.2s" }} />
+                <span className="text-sm text-gray-500 ml-1">AI 分析中...</span>
+              </div>
             </div>
           </div>
         )}
@@ -127,7 +173,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
             disabled={isGenerating || !input.trim()}
             className="px-5 py-2.5 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors disabled:opacity-50"
           >
-            發送
+            {isGenerating ? "生成中..." : "發送"}
           </button>
         </div>
       </div>

@@ -15,17 +15,11 @@ const DEFAULT_CODE = `// Museai 即時編程
 //   音色: "sine", "square", "sawtooth", "triangle"
 //
 // sequence(音符陣列) - 播放一段旋律
-//   音符陣列: [{ note, duration, instrument }]
-//
 // pattern(名稱, 音符陣列) - 定義可重複的模式
-// pattern("kick", [
-//   { note: "C2", duration: 1 },
-//   { note: "C2", duration: 0.5 },
-// ])
-// playPattern("kick")
-//
+// playPattern("名稱") - 播放模式
 // setBpm(bpm) - 改變速度
-// setVolume(0.8) - 主音量 (0 到 1)
+// setVolume(0.8) - 主音量
+// generate("提示詞") - 將生成的音軌加入專案
 
 setBpm(120);
 setVolume(0.7);
@@ -51,11 +45,10 @@ pattern("bass", [
   { note: "A3", duration: 0.5, instrument: "sawtooth" },
 ]);
 
-// 播放模式
 playPattern("kick");
 playPattern("hat");
 
-// 加入旋律
+// 旋律
 sequence([
   { note: "C4", duration: 0.5, instrument: "square" },
   { note: "E4", duration: 0.5, instrument: "square" },
@@ -64,20 +57,40 @@ sequence([
   { note: "G4", duration: 0.5, instrument: "square" },
   { note: "E4", duration: 1, instrument: "square" },
 ]);
-
-// 用 AI 生成背景音
-generate("加入溫暖的 Pad 音色");
 `;
 
 export function LiveCodingMode({ projectId }: { projectId: string }) {
   const [code, setCode] = useState(DEFAULT_CODE);
   const [output, setOutput] = useState<string[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const addTrack = useProjectStore((s) => s.addTrack);
 
   const addOutput = (msg: string) => {
     setOutput((prev) => [...prev, `[${new Date().toLocaleTimeString("zh-TW")}] ${msg}`]);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim() || isAiLoading) return;
+    setIsAiLoading(true);
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt, mode: "livecode" }),
+      });
+      if (!res.ok) throw new Error("AI 生成失敗");
+      const data = await res.json();
+      setCode((prev) => prev + `\n\n// === AI 生成的程式碼 ===\n${data.code}`);
+      addOutput(`AI 已根據「${aiPrompt}」生成程式碼`);
+      setAiPrompt("");
+    } catch (err) {
+      addOutput(`錯誤：${err instanceof Error ? err.message : "AI 生成失敗"}`);
+    } finally {
+      setIsAiLoading(false);
+    }
   };
 
   const handleRun = useCallback(async () => {
@@ -141,10 +154,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
         },
         playPattern: (name: string) => {
           const notes = patterns.get(name);
-          if (!notes) {
-            addOutput(`找不到模式「${name}」`);
-            return;
-          }
+          if (!notes) { addOutput(`找不到模式「${name}」`); return; }
           let time = 0;
           for (const n of notes) {
             playNote(n.note, n.duration, n.instrument || "sine", time);
@@ -157,7 +167,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
           addTrack(projectId, {
             name: prompt.slice(0, 40),
             type: "AUDIO",
-            audioUrl: "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg",
+            audioUrl: "",
             duration: 30,
             order: Date.now(),
           });
@@ -167,7 +177,6 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
 
       const fn = new Function(...Object.keys(evalEnv), code);
       await fn(...Object.values(evalEnv));
-
       addOutput("執行完畢！");
     } catch (err) {
       addOutput(`錯誤：${err instanceof Error ? err.message : "未知錯誤"}`);
@@ -188,6 +197,26 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full bg-white">
       <div className="flex-1 flex flex-col border-r">
+        {/* AI Prompt Bar */}
+        <div className="border-b p-2 flex items-center gap-2 bg-white">
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAiGenerate()}
+            placeholder="用中文描述想要的音樂，AI 幫你寫程式碼..."
+            className="flex-1 px-3 py-1.5 rounded-lg border text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500"
+          />
+          <button
+            onClick={handleAiGenerate}
+            disabled={isAiLoading || !aiPrompt.trim()}
+            className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 disabled:opacity-50"
+          >
+            {isAiLoading ? "生成中..." : "AI 幫我寫"}
+          </button>
+        </div>
+
+        {/* Editor */}
         <div className="flex-1">
           <MonacoEditor
             language="javascript"
@@ -204,6 +233,8 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             }}
           />
         </div>
+
+        {/* Playback Controls */}
         <div className="border-t p-2 flex items-center gap-2 bg-white">
           <button
             onClick={handleRun}
@@ -221,13 +252,16 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
         </div>
       </div>
 
+      {/* Output panel */}
       <div className="w-80 flex flex-col">
         <div className="text-xs text-gray-500 px-3 py-2 border-b font-medium bg-white">
           輸出
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin bg-white">
           {output.length === 0 ? (
-            <p className="text-xs text-gray-400">點擊「執行」來執行程式碼</p>
+            <p className="text-xs text-gray-400">
+              在上方輸入中文描述，點「AI 幫我寫」來自動產生程式碼
+            </p>
           ) : (
             output.map((line, i) => (
               <p key={i} className="text-xs text-gray-600 font-mono">{line}</p>
