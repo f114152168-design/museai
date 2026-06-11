@@ -1,39 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateMusicParams, generateLiveCode, isOpenAIConfigured } from "@/lib/openai";
+import { generateMidiFromPrompt, generateLiveCodeFromPrompt, isOpenAIConfigured } from "@/lib/openai";
+import { generateMockMidi } from "@/lib/midi";
 
 export async function GET() {
   return NextResponse.json({
     configured: isOpenAIConfigured(),
-    message: isOpenAIConfigured() ? "OpenAI API 已串接" : "OpenAI API 未串接 - 請在 .env 設定 OPENAI_API_KEY",
+    message: isOpenAIConfigured()
+      ? "OpenAI API 已串接"
+      : "OpenAI API 未串接 - 請在 .env 設定 OPENAI_API_KEY",
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    if (!isOpenAIConfigured()) {
-      return NextResponse.json(
-        {
-          error: "OPENAI_API_KEY 未設定",
-          hint: "請在專案根目錄的 .env 檔案中加入：\nOPENAI_API_KEY=\"sk-your-key-here\"\n\n然後重新啟動 dev server。",
-        },
-        { status: 503 }
-      );
-    }
-
     const body = await req.json();
-    const { prompt, mode, bpm, key } = body;
+    const { prompt, mode, bpm } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "請提供音樂描述" }, { status: 400 });
     }
 
     if (mode === "livecode") {
-      const code = await generateLiveCode(prompt, bpm ?? 120, key ?? "C");
+      if (!isOpenAIConfigured()) {
+        return NextResponse.json(
+          { error: "OPENAI_API_KEY 未設定", code: "// 請先在 .env 設定 OPENAI_API_KEY" },
+          { status: 503 }
+        );
+      }
+      const code = await generateLiveCodeFromPrompt(prompt, bpm ?? 120);
       return NextResponse.json({ code, prompt });
     }
 
-    const params = await generateMusicParams(prompt);
-    return NextResponse.json({ ...params, prompt });
+    // Default: generate MIDI data
+    let midi: ReturnType<typeof generateMockMidi>;
+
+    if (isOpenAIConfigured()) {
+      midi = await generateMidiFromPrompt(prompt);
+    } else {
+      midi = generateMockMidi(bpm ?? 120);
+    }
+
+    return NextResponse.json({ type: "midi", data: midi, prompt });
   } catch (error) {
     console.error("Generation error:", error);
     const message = error instanceof Error ? error.message : "生成失敗";

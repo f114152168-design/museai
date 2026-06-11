@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { MidiData } from "@/lib/midi";
 
 let client: OpenAI | null = null;
 
@@ -18,73 +19,56 @@ export function getOpenAI(): OpenAI {
   return client;
 }
 
-export interface MusicGenerationParams {
-  bpm: number;
-  key: string;
-  scale: string;
-  timeSignature: string;
-  chordProgression?: string[];
-  instruments: {
-    name: string;
-    type: "melodic" | "rhythmic" | "bass" | "pad" | "fx";
-    pattern: string;
-    notes?: string[];
-  }[];
-  structure?: {
-    sections: { name: string; bars: number }[];
-  };
-  description: string;
-}
+const MIDI_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手。使用者的需求是用自然語言描述音樂，你要輸出 MIDI 音符資料。
 
-export const MUSIC_GENERATION_SYSTEM_PROMPT = `你是 Museai 的音樂分析 AI。你的任務是將使用者的自然語言音樂描述轉換為結構化音樂參數。
+請嚴格以 JSON 格式回覆，不要加任何其他文字：
 
-請嚴格以 JSON 格式回覆，格式如下：
 {
   "bpm": 120,
-  "key": "C",
-  "scale": "minor",
-  "timeSignature": "4/4",
-  "chordProgression": ["Cm", "Fm", "Ab", "Eb"],
-  "instruments": [
+  "tracks": [
     {
-      "name": "kick",
-      "type": "rhythmic",
-      "pattern": "fourOnFloor",
-      "notes": ["C2"]
-    },
-    {
-      "name": "bass",
-      "type": "bass",
-      "pattern": "walking",
-      "notes": ["C2", "E2", "G2", "A2"]
+      "name": "Kick",
+      "channel": 0,
+      "notes": [
+        { "pitch": 36, "startTime": 0, "duration": 0.9, "velocity": 0.9 }
+      ]
     }
-  ],
-  "structure": {
-    "sections": [
-      { "name": "intro", "bars": 4 },
-      { "name": "verse", "bars": 8 }
-    ]
-  },
-  "description": "對生成音樂的簡短文字描述"
+  ]
 }
 
-pattern 可選值: fourOnFloor, offBeat, halfTime, walking, arpeggio, chordal, random, silence, custom
-type 可選值: melodic, rhythmic, bass, pad, fx
+規則：
+- pitch: MIDI 音符編號 0-127（69=A4=440Hz）。36=C2(大鼓), 38=D2(小鼓), 42=F#2(HiHat), 43=G2(OpenHat)
+- startTime: 以拍為單位（0 = 第一拍開頭）
+- duration: 以拍為單位（一拍 = 0.25 在 4/4 的意思是四分音符）
+- velocity: 0-1（力度）
+- channel: 0=鼓, 1=小鼓/鈸, 2=HiHat, 3=貝斯, 4=和弦, 5=主旋律
+- bpm: 60-200
 
-請確保:
-1. 調性支援: C, C#, D, D#, E, F, F#, G, G#, A, A#, B
-2. 音階支援: major, minor, dorian, phrygian, lydian, mixolydian
-3. BPM 範圍: 60-200
-4. 若有指定樂風請根據該樂風的特色參數回應
-5. 如果使用者的描述太模糊，請根據常見的電子音樂風格補上合理的預設值`;
+樂器對照表（channel）:
+- 0: Kick, 36=C2
+- 1: Snare, 38=D2, 40=E2
+- 2: HiHat, 42=F#2(閉), 46=A#2(開)
+- 3: Bass, 建議 24-48 範圍
+- 4: Chord/Pad, 建議 48-72 範圍
+- 5: Lead/Arp, 建議 60-84 範圍
 
-export async function generateMusicParams(prompt: string): Promise<MusicGenerationParams> {
+請確保：
+1. 4/4 拍，總長度 16 拍（4 小節）
+2. 大鼓在正拍（0, 4, 8, 12）
+3. 小鼓在反拍（2, 6, 10, 14）
+4. HiHat 每半拍（0, 0.5, 1, 1.5...），力度交替強弱
+5. 貝斯走根音，每 2 拍一個
+6. 和弦用長音（duration: 4），每小節換一個
+7. 主旋律用 8 分音符為主
+8. 根據使用者描述的曲風調整節奏和音符選擇`;
+
+export async function generateMidiFromPrompt(prompt: string): Promise<MidiData> {
   const openai = getOpenAI();
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: MUSIC_GENERATION_SYSTEM_PROMPT },
+      { role: "system", content: MIDI_SYSTEM_PROMPT },
       { role: "user", content: prompt },
     ],
     response_format: { type: "json_object" },
@@ -94,14 +78,19 @@ export async function generateMusicParams(prompt: string): Promise<MusicGenerati
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("OpenAI 沒有回傳內容");
 
-  const params = JSON.parse(content) as MusicGenerationParams;
-  return params;
+  const data = JSON.parse(content) as MidiData;
+
+  // Ensure required fields
+  if (!data.bpm) data.bpm = 120;
+  if (!data.tracks) data.tracks = [];
+  data.totalBeats = 16;
+
+  return data;
 }
 
-export async function generateLiveCode(
+export async function generateLiveCodeFromPrompt(
   prompt: string,
-  bpm: number = 120,
-  key: string = "C"
+  bpm: number = 120
 ): Promise<string> {
   const openai = getOpenAI();
 
@@ -110,19 +99,19 @@ export async function generateLiveCode(
     messages: [
       {
         role: "system",
-        content: `你是 Museai Live Coding 模式的 AI 助手。使用者會描述想要的音樂，你需要用 JavaScript 程式碼來生成。
+        content: `你是 Museai Live Coding 助手。使用者描述想要的音樂，你要用 JavaScript 生成 MIDI 音符。
 
-可用的函數：
-- play(note, duration, instrument) - 播放單音 (note: "C4", duration: 拍數, instrument: "sine"/"square"/"sawtooth"/"triangle")
-- sequence(notes) - 播放音符陣列 [{note, duration, instrument}]
-- pattern(name, notes) - 定義模式
-- playPattern(name) - 播放已定義的模式
-- setBpm(bpm) - 設速度
-- setVolume(vol) - 設音量 (0-1)
+可用函數：
+- play(pitch, startBeat, duration, velocity, channel)
+  pitch: MIDI 音符編號 (36=C2)
+  startBeat: 從第幾拍開始
+  duration: 長度（拍）
+  velocity: 力度 0-1
+  channel: 0=鼓,1=小鼓,2=HH,3=貝斯,4=和弦,5=主旋律
 
-當前設定: BPM=${bpm}, Key=${key}
+當前 BPM: ${bpm}
 
-請只回傳可執行的 JavaScript 程式碼，不要加解說。`,
+請只回傳 JavaScript 程式碼，不要解說。用 / 註解說明曲風。`,
       },
       { role: "user", content: prompt },
     ],
