@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useProjectStore } from "@/lib/store";
+import { getTier } from "@/lib/billing";
 
 export default function Dashboard() {
   const { data: session } = useSession();
@@ -10,6 +11,20 @@ export default function Dashboard() {
 
   return (
     <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      {getTier() === "free" && (
+        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-50 to-cyan-50 border border-purple-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🚀</span>
+            <div>
+              <p className="text-sm font-medium text-gray-800">你正在使用 Free 方案</p>
+              <p className="text-xs text-gray-500">升級 Pro 解鎖完整編曲（最長 3 分鐘）與 WAV 匯出</p>
+            </div>
+          </div>
+          <Link href="/pricing" className="shrink-0 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 transition-colors">
+            升級 Pro
+          </Link>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold">我的專案</h1>

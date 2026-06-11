@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Museai - AI 音樂創作平台",
-  description: "用自然語言、MIDI 或程式碼即時創作電子音樂。不需要樂理知識。",
-  keywords: ["AI 音樂", "音樂生成", "即時編程", "電子音樂", "混音"],
+  title: "Museai - AI 音樂創作平台 | 用 AI 生成 MIDI 樂譜，一鍵匯出音檔",
+  description: "Museai 是 AI 驅動的音樂創作 SaaS 平台。輸入文字描述，AI 即時生成 MIDI 樂譜，鋼琴卷軸編輯，三種創作模式，支援 WAV 匯出。免費開始，升級 Pro 解鎖完整編曲。",
+  keywords: ["AI 音樂", "音樂生成", "MIDI 編輯", "即時編程", "電子音樂", "SaaS 音樂平台", "AI 作曲"],
 };
 
 export default function RootLayout({

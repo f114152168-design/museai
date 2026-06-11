@@ -7,6 +7,7 @@ import { ChatMode } from "@/components/chat-mode";
 import { TimelineMode } from "@/components/timeline-mode";
 import { LiveCodingMode } from "@/components/live-coding-mode";
 import { cn } from "@/lib/utils";
+import { getTier } from "@/lib/billing";
 
 type Mode = "chat" | "timeline" | "livecode";
 
@@ -52,6 +53,12 @@ export default function ProjectEditor() {
 
   return (
     <div className="flex-1 flex flex-col">
+      {getTier() === "free" && (
+        <div className="px-4 py-2 bg-gradient-to-r from-purple-50 to-cyan-50 border-b border-purple-200 flex items-center justify-between text-sm">
+          <p className="text-xs text-gray-600">Free 方案 — 每次最多生成 30 秒循環。升級 Pro 解鎖完整編曲。</p>
+          <a href="/pricing" className="shrink-0 text-xs px-3 py-1 rounded-full bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors">升級 Pro</a>
+        </div>
+      )}
       <div className="border-b px-4 py-2 flex items-center justify-between bg-white">
         <div className="flex items-center gap-3">
           <input
