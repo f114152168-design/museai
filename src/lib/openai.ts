@@ -2,7 +2,14 @@ import OpenAI from "openai";
 
 let client: OpenAI | null = null;
 
+export function isOpenAIConfigured(): boolean {
+  return !!process.env.OPENAI_API_KEY;
+}
+
 export function getOpenAI(): OpenAI {
+  if (!isOpenAIConfigured()) {
+    throw new Error("OPENAI_API_KEY 未設定");
+  }
   if (!client) {
     client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,

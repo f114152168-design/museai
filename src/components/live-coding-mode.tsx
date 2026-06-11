@@ -3,41 +3,31 @@
 import { useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useProjectStore } from "@/lib/store";
+import { useApiStatus } from "@/hooks/use-api-status";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 const DEFAULT_CODE = `// Museai 即時編程
-// 使用這些函數來創作音樂：
-//
-// play(音符, 拍長, 音色) - 播放單音
-//   音符: "C4", "D#3", "A4" 等
-//   拍長: 0.25, 0.5, 1, 2 等（以拍為單位）
-//   音色: "sine", "square", "sawtooth", "triangle"
-//
-// sequence(音符陣列) - 播放一段旋律
-// pattern(名稱, 音符陣列) - 定義可重複的模式
-// playPattern("名稱") - 播放模式
-// setBpm(bpm) - 改變速度
-// setVolume(0.8) - 主音量
-// generate("提示詞") - 將生成的音軌加入專案
+// play(音符, 拍長, 音色)
+// sequence(音符陣列)
+// pattern(名稱, 音符陣列)
+// playPattern("名稱")
+// setBpm(bpm)
+// setVolume(vol)
+// generate("提示詞")
 
 setBpm(120);
 setVolume(0.7);
 
-// 四地板大鼓
 pattern("kick", [
   { note: "C2", duration: 1, instrument: "sine" },
 ]);
-
-// 開合鈸
 pattern("hat", [
   { note: "C5", duration: 0.25, instrument: "triangle" },
   { note: "C5", duration: 0.25, instrument: "triangle" },
   { note: "C5", duration: 0.25, instrument: "triangle" },
   { note: "C5", duration: 0.25, instrument: "triangle" },
 ]);
-
-// 貝斯線
 pattern("bass", [
   { note: "C3", duration: 1, instrument: "sawtooth" },
   { note: "E3", duration: 1, instrument: "sawtooth" },
@@ -48,7 +38,6 @@ pattern("bass", [
 playPattern("kick");
 playPattern("hat");
 
-// 旋律
 sequence([
   { note: "C4", duration: 0.5, instrument: "square" },
   { note: "E4", duration: 0.5, instrument: "square" },
@@ -67,6 +56,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const addTrack = useProjectStore((s) => s.addTrack);
+  const apiStatus = useApiStatus();
 
   const addOutput = (msg: string) => {
     setOutput((prev) => [...prev, `[${new Date().toLocaleTimeString("zh-TW")}] ${msg}`]);
@@ -76,18 +66,28 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
     if (!aiPrompt.trim() || isAiLoading) return;
     setIsAiLoading(true);
     try {
+      if (!apiStatus.configured) {
+        addOutput("⚠️ OpenAI API 未串接，無法使用 AI 生成程式碼");
+        addOutput("💡 請在 .env 設定 OPENAI_API_KEY");
+        setIsAiLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: aiPrompt, mode: "livecode" }),
       });
-      if (!res.ok) throw new Error("AI 生成失敗");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "AI 生成失敗");
+      }
       const data = await res.json();
       setCode((prev) => prev + `\n\n// === AI 生成的程式碼 ===\n${data.code}`);
-      addOutput(`AI 已根據「${aiPrompt}」生成程式碼`);
+      addOutput(`✅ AI 已根據「${aiPrompt}」生成程式碼`);
       setAiPrompt("");
     } catch (err) {
-      addOutput(`錯誤：${err instanceof Error ? err.message : "AI 生成失敗"}`);
+      addOutput(`❌ 錯誤：${err instanceof Error ? err.message : "AI 生成失敗"}`);
     } finally {
       setIsAiLoading(false);
     }
@@ -167,7 +167,6 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
           addTrack(projectId, {
             name: prompt.slice(0, 40),
             type: "AUDIO",
-            audioUrl: "",
             duration: 30,
             order: Date.now(),
           });
@@ -177,9 +176,9 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
 
       const fn = new Function(...Object.keys(evalEnv), code);
       await fn(...Object.values(evalEnv));
-      addOutput("執行完畢！");
+      addOutput("✅ 執行完畢！");
     } catch (err) {
-      addOutput(`錯誤：${err instanceof Error ? err.message : "未知錯誤"}`);
+      addOutput(`❌ 錯誤：${err instanceof Error ? err.message : "未知錯誤"}`);
     } finally {
       setTimeout(() => setIsPlaying(false), 500);
     }
@@ -197,6 +196,20 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full bg-white">
       <div className="flex-1 flex flex-col border-r">
+        {/* API Status */}
+        {!apiStatus.loading && !apiStatus.configured && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-700 flex items-center gap-2">
+            <span>⚠️</span>
+            <span className="flex-1">AI 程式碼生成未啟用（需在 .env 設定 OPENAI_API_KEY）</span>
+            <button
+              onClick={() => window.open("https://platform.openai.com/api-keys", "_blank")}
+              className="underline hover:text-amber-900"
+            >
+              取得金鑰
+            </button>
+          </div>
+        )}
+
         {/* AI Prompt Bar */}
         <div className="border-b p-2 flex items-center gap-2 bg-white">
           <input
@@ -204,19 +217,23 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAiGenerate()}
-            placeholder="用中文描述想要的音樂，AI 幫你寫程式碼..."
+            placeholder={
+              apiStatus.configured
+                ? "用中文描述想要的音樂，AI 幫你寫程式碼..."
+                : "請先在 .env 設定 OPENAI_API_KEY..."
+            }
             className="flex-1 px-3 py-1.5 rounded-lg border text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500"
           />
           <button
             onClick={handleAiGenerate}
-            disabled={isAiLoading || !aiPrompt.trim()}
+            disabled={isAiLoading || !aiPrompt.trim() || !apiStatus.configured}
             className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 disabled:opacity-50"
+            title={!apiStatus.configured ? "需設定 OPENAI_API_KEY" : undefined}
           >
             {isAiLoading ? "生成中..." : "AI 幫我寫"}
           </button>
         </div>
 
-        {/* Editor */}
         <div className="flex-1">
           <MonacoEditor
             language="javascript"
@@ -234,7 +251,6 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
           />
         </div>
 
-        {/* Playback Controls */}
         <div className="border-t p-2 flex items-center gap-2 bg-white">
           <button
             onClick={handleRun}
@@ -252,16 +268,18 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* Output panel */}
       <div className="w-80 flex flex-col">
         <div className="text-xs text-gray-500 px-3 py-2 border-b font-medium bg-white">
           輸出
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin bg-white">
           {output.length === 0 ? (
-            <p className="text-xs text-gray-400">
-              在上方輸入中文描述，點「AI 幫我寫」來自動產生程式碼
-            </p>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>點「執行」播放程式碼</p>
+              {!apiStatus.configured && (
+                <p className="text-amber-600">「AI 幫我寫」需設定 OPENAI_API_KEY</p>
+              )}
+            </div>
           ) : (
             output.map((line, i) => (
               <p key={i} className="text-xs text-gray-600 font-mono">{line}</p>
