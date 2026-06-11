@@ -1,0 +1,166 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+  generations   GenerationJob[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  bpm         Int      @default(120)
+  timeSignature String @default("4/4")
+  key         String   @default("C")
+  scale       String   @default("major")
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tracks      Track[]
+  generations GenerationJob[]
+  promptHistory PromptHistory[]
+}
+
+model Track {
+  id          String   @id @default(cuid())
+  name        String
+  type        TrackType @default(AUDIO)
+  order       Int      @default(0)
+  volume      Float    @default(1.0)
+  pan         Float    @default(0.0)
+  muted       Boolean  @default(false)
+  soloed      Boolean  @default(false)
+  audioUrl    String?
+  waveformData String? @db.Text
+  duration    Float?
+  midiData    String?  @db.Text
+  code        String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+enum TrackType {
+  AUDIO
+  MIDI
+  CODE
+}
+
+model GenerationJob {
+  id          String         @id @default(cuid())
+  prompt      String         @db.Text
+  mode        GenerationMode
+  status      JobStatus      @default(PENDING)
+  provider    String
+  model       String
+  parameters  Json?
+  resultUrl   String?
+  resultData  Json?
+  error       String?        @db.Text
+  duration    Int?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  completedAt DateTime?
+
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+}
+
+enum GenerationMode {
+  CHAT
+  TIMELINE
+  LIVE_CODING
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model PromptHistory {
+  id        String   @id @default(cuid())
+  prompt    String   @db.Text
+  response  Json?
+  mode      GenerationMode
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+}
