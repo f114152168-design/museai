@@ -6,6 +6,7 @@ import { playMidi, stopMusic } from "@/lib/synth";
 import { useApiStatus } from "@/hooks/use-api-status";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
 import type { MidiData } from "@/lib/midi";
+import { PROMPT_PRESETS } from "@/lib/presets";
 
 interface Message {
   role: "user" | "assistant";
@@ -186,7 +187,15 @@ export function ChatMode({ projectId }: { projectId: string }) {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p-4 bg-white">
+      <div className="border-t px-4 pt-3 pb-2 bg-white">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {PROMPT_PRESETS.map((preset) => (
+            <button key={preset.label} onClick={() => setInput(preset.prompt)}
+              className="px-2.5 py-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-xs hover:bg-purple-100 hover:border-purple-300 transition-colors">
+              {preset.label} · {preset.bpm}BPM
+            </button>
+          ))}
+        </div>
         <div className="flex gap-2">
           <input
             type="text"
