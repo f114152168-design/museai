@@ -58,6 +58,7 @@ function generateId(): string {
 interface ProjectStore {
   projects: Project[];
   currentProjectId: string | null;
+  hydrated: boolean;
   createProject: (name: string, bpm?: number, key?: string, scale?: string) => Project;
   getProject: (id: string) => Project | undefined;
   updateProject: (id: string, data: Partial<Project>) => void;
@@ -92,6 +93,7 @@ export const useProjectStore = create<ProjectStore>()(
     (set, get) => ({
       projects: DEFAULT_PROJECTS,
       currentProjectId: null,
+      hydrated: false,
 
       createProject: (name, bpm = 120, key = "C", scale = "major") => {
         const project: Project = {
@@ -195,6 +197,11 @@ export const useProjectStore = create<ProjectStore>()(
         createdAt: new Date().toISOString(),
       }),
     }),
-    { name: "museai-storage" }
+    {
+      name: "museai-storage",
+      onRehydrateStorage: () => () => {
+        useProjectStore.setState({ hydrated: true });
+      },
+    }
   )
 );

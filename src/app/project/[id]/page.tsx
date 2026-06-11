@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useProjectStore } from "@/lib/store";
 import { ChatMode } from "@/components/chat-mode";
 import { TimelineMode } from "@/components/timeline-mode";
@@ -23,13 +23,9 @@ export default function ProjectEditor() {
 
   const project = useProjectStore((s) => s.getProject(id));
   const updateProject = useProjectStore((s) => s.updateProject);
+  const hydrated = useProjectStore((s) => s.hydrated);
 
   const [mode, setMode] = useState<Mode>("chat");
-  const [projectName, setProjectName] = useState("");
-
-  useEffect(() => {
-    if (project) setProjectName(project.name);
-  }, [project]);
 
   if (!project) {
     return (
@@ -60,9 +56,8 @@ export default function ProjectEditor() {
         <div className="flex items-center gap-3">
           <input
             type="text"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            onBlur={() => updateProject(id, { name: projectName })}
+            defaultValue={project.name}
+            onBlur={(e) => updateProject(id, { name: e.target.value })}
             className="bg-transparent text-lg font-semibold focus:outline-none focus:bg-gray-50 px-2 py-1 rounded"
           />
           <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -93,7 +88,7 @@ export default function ProjectEditor() {
             {m.label}
           </button>
         ))}
-        {project.tracks.length > 0 && (
+        {hydrated && project.tracks.length > 0 && (
           <div className="ml-auto flex items-center text-xs text-gray-400">
             {project.tracks.length} 軌
           </div>
