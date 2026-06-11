@@ -22,6 +22,7 @@ interface Message {
 
 export function ChatMode({ projectId }: { projectId: string }) {
   const addTrack = useProjectStore((s) => s.addTrack);
+  const addCommit = useProjectStore((s) => s.addCommit);
   const apiStatus = useApiStatus();
 
   const [tier, setTierState] = useState<Tier>(getTier);
@@ -114,6 +115,12 @@ export function ChatMode({ projectId }: { projectId: string }) {
         midiData: JSON.stringify(midi),
         duration: durationSec,
         order: Date.now(),
+      });
+
+      addCommit(projectId, {
+        prompt,
+        midi,
+        type: "generate",
       });
 
       setIsPlaying(false);

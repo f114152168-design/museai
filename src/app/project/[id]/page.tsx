@@ -8,6 +8,7 @@ import { TimelineMode } from "@/components/timeline-mode";
 import { LiveCodingMode } from "@/components/live-coding-mode";
 import { cn } from "@/lib/utils";
 import { getTier } from "@/lib/billing";
+import { VersionHistory } from "@/components/version-history";
 
 type Mode = "chat" | "timeline" | "livecode";
 
@@ -27,6 +28,7 @@ export default function ProjectEditor() {
   const hydrated = useProjectStore((s) => s.hydrated);
 
   const [mode, setMode] = useState<Mode>("chat");
+  const [showHistory, setShowHistory] = useState(false);
 
   if (!project) {
     return (
@@ -95,15 +97,32 @@ export default function ProjectEditor() {
             {m.label}
           </button>
         ))}
-        {hydrated && project.tracks.length > 0 && (
-          <div className="ml-auto flex items-center text-xs text-gray-400">
-            {project.tracks.length} 軌
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setShowHistory(!showHistory)}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+              showHistory ? "bg-purple-50 border-purple-300 text-purple-600" : "border-gray-200 text-gray-400 hover:text-gray-600"
+            }`}>
+            <span>⏱</span>
+            版本歷史
+            {project.commits.length > 0 && (
+              <span className="bg-gray-100 text-gray-500 text-[10px] px-1.5 py-0.5 rounded-full ml-0.5">{project.commits.length}</span>
+            )}
+          </button>
+          {hydrated && project.tracks.length > 0 && (
+            <div className="flex items-center text-xs text-gray-400">{project.tracks.length} 軌</div>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        <ModeComponent projectId={id} />
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <ModeComponent projectId={id} />
+        </div>
+        {showHistory && (
+          <div className="w-80 border-l bg-gray-50 overflow-y-auto shrink-0">
+            <VersionHistory projectId={id} />
+          </div>
+        )}
       </div>
     </div>
   );

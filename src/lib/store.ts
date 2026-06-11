@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { MidiData } from "./midi";
 
 export type TrackType = "AUDIO" | "MIDI" | "CODE";
 
@@ -30,8 +31,19 @@ export interface Project {
   scale: string;
   isPublic: boolean;
   tracks: Track[];
+  commits: VersionCommit[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VersionCommit {
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  prompt: string;
+  midi: MidiData;
+  message: string;
+  type: "generate" | "edit" | "export";
 }
 
 export interface GenerationJob {
@@ -51,8 +63,14 @@ export interface PromptEntry {
   createdAt: string;
 }
 
+let _idCounter = 0;
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 15);
+  _idCounter++;
+  return `${Date.now().toString(36)}-${_idCounter.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function summarizeCommit(tracks: number, notes: number, bpm: number): string {
+  return `${tracks} 軌 · ${notes} 個音符 · ${bpm} BPM`;
 }
 
 interface ProjectStore {
@@ -71,6 +89,9 @@ interface ProjectStore {
   addGeneration: (projectId: string, job: Partial<GenerationJob>) => GenerationJob;
   getPrompts: (projectId: string) => PromptEntry[];
   addPrompt: (projectId: string, entry: Partial<PromptEntry>) => PromptEntry;
+  addCommit: (projectId: string, commit: Omit<VersionCommit, "id" | "parentId" | "timestamp" | "message">) => VersionCommit;
+  getCommits: (projectId: string) => VersionCommit[];
+  restoreCommit: (projectId: string, commitId: string) => VersionCommit;
 }
 
 const DEFAULT_PROJECTS: Project[] = [
@@ -83,6 +104,7 @@ const DEFAULT_PROJECTS: Project[] = [
     scale: "minor",
     isPublic: false,
     tracks: [],
+    commits: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -105,6 +127,7 @@ export const useProjectStore = create<ProjectStore>()(
           scale,
           isPublic: false,
           tracks: [],
+          commits: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -196,6 +219,79 @@ export const useProjectStore = create<ProjectStore>()(
         mode: "CHAT",
         createdAt: new Date().toISOString(),
       }),
+
+      addCommit: (projectId, data) => {
+        const project = get().getProject(projectId);
+        const parentId = project?.commits.length
+          ? project.commits[project.commits.length - 1].id
+          : null;
+        const totalNotes = data.midi.tracks.reduce((s, t) => s + t.notes.length, 0);
+        const commit: VersionCommit = {
+          id: generateId(),
+          parentId,
+          timestamp: new Date().toISOString(),
+          message: summarizeCommit(data.midi.tracks.length, totalNotes, data.midi.bpm),
+          ...data,
+        };
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId
+              ? { ...p, commits: [...p.commits, commit], updatedAt: new Date().toISOString() }
+              : p
+          ),
+        }));
+        return commit;
+      },
+
+      getCommits: (projectId) => {
+        return get().getProject(projectId)?.commits ?? [];
+      },
+
+      restoreCommit: (projectId, commitId) => {
+        const project = get().getProject(projectId);
+        const commit = project?.commits.find((c) => c.id === commitId);
+        if (!project || !commit) throw new Error("Commit not found");
+
+        const restoredTracks = commit.midi.tracks.map((t) => ({
+          id: generateId(),
+          name: t.name,
+          type: "MIDI" as const,
+          order: t.channel,
+          volume: 1,
+          pan: 0,
+          muted: false,
+          soloed: false,
+          duration: commit.midi.totalBeats * (60 / commit.midi.bpm),
+          midiData: JSON.stringify(commit.midi),
+          createdAt: new Date().toISOString(),
+        }));
+
+        const totalNotes = commit.midi.tracks.reduce((s, t) => s + t.notes.length, 0);
+        const restoreCommit: VersionCommit = {
+          id: generateId(),
+          parentId: commitId,
+          timestamp: new Date().toISOString(),
+          prompt: `回朔到 commit ${commitId.slice(0, 6)}: ${commit.prompt}`,
+          midi: commit.midi,
+          message: `↩ 回朔 · ${summarizeCommit(commit.midi.tracks.length, totalNotes, commit.midi.bpm)}`,
+          type: "edit",
+        };
+
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  tracks: restoredTracks,
+                  commits: [...p.commits, restoreCommit],
+                  updatedAt: new Date().toISOString(),
+                }
+              : p
+          ),
+        }));
+
+        return restoreCommit;
+      },
     }),
     {
       name: "museai-storage",
