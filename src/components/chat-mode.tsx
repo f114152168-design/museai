@@ -6,6 +6,7 @@ import { playMidi, stopMusic } from "@/lib/synth";
 import { useApiStatus } from "@/hooks/use-api-status";
 import { useTier } from "@/hooks/use-tier";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
+import { MelodyGenerator } from "@/components/melody-generator";
 import { renderMidiToWav, downloadBlob } from "@/lib/audio-export";
 import { getDurationSeconds } from "@/lib/midi";
 import { TIER_LIMITS } from "@/lib/billing";
@@ -283,6 +284,9 @@ export function ChatMode({ projectId }: { projectId: string }) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Melody Generator */}
+      <MelodyGenerator projectId={projectId} />
 
       {/* Input */}
       <div className="border-t px-4 pt-3 pb-2 bg-white">

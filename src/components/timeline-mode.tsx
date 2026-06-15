@@ -300,8 +300,25 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
         )}
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 overflow-auto scrollbar-thin">
+      {/* Canvas — also accepts drops from MelodyGenerator */}
+      <div className="flex-1 overflow-auto scrollbar-thin"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const raw = e.dataTransfer.getData("application/x-museai-midi");
+          if (!raw) return;
+          try {
+            const dropped = JSON.parse(raw) as MidiData;
+            addTrack(projectId, {
+              name: `Melody ${dropped.bpm}BPM`,
+              type: "MIDI",
+              midiData: raw,
+              duration: getDurationSeconds(dropped),
+              order: Date.now(),
+            });
+            setMidi(dropped);
+          } catch {}
+        }}>
         <canvas ref={canvasRef} width={cvsWidth} height={cvsHeight} className="block" style={{ cursor: "crosshair" }} />
       </div>
 
