@@ -93,26 +93,32 @@ function getChannelSynth(channel: number) {
   let synth: Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth;
 
   switch (channel) {
+    // Kick — punchy sub
     case 0:
-      synth = new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 5, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 } });
+      synth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 5, envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.08 } });
       break;
+    // Snare / Clap
     case 1:
-      synth = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 } });
+      synth = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.12 } });
       break;
+    // Hi-hat — tight click
     case 2:
-      synth = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 800 });
+      synth = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 800 });
       break;
+    // Bass — gritty FM sub
     case 3:
-      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 0.5, modulationIndex: 2, oscillator: { type: "sine" }, modulation: { type: "sine" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.4 }, modulationEnvelope: { attack: 0.02, decay: 0.1, sustain: 0.2, release: 0.3 } });
+      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 0.75, modulationIndex: 2.5, oscillator: { type: "square" }, modulation: { type: "sine" }, envelope: { attack: 0.002, decay: 0.15, sustain: 0.2, release: 0.3 }, modulationEnvelope: { attack: 0.01, decay: 0.05, sustain: 0.2, release: 0.2 } });
       break;
+    // Chord / Supersaw — fast attack for stabs, full for pads
     case 4:
-      synth = new Tone.PolySynth(Tone.AMSynth, { harmonicity: 1.5, oscillator: { type: "sawtooth" }, modulation: { type: "sine" }, envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 2 }, modulationEnvelope: { attack: 0.5, decay: 0.2, sustain: 0.6, release: 1.5 } });
+      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 1.5, modulationIndex: 4, oscillator: { type: "sawtooth" }, modulation: { type: "sine" }, envelope: { attack: 0.003, decay: 0.3, sustain: 0.6, release: 1 }, modulationEnvelope: { attack: 0.005, decay: 0.1, sustain: 0.4, release: 0.8 } });
       break;
+    // Lead / Pluck / Arp — very short percussive
     case 5:
-      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2, modulationIndex: 3, oscillator: { type: "sawtooth" }, modulation: { type: "square" }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.3 }, modulationEnvelope: { attack: 0.05, decay: 0.05, sustain: 0.5, release: 0.2 } });
+      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2.5, modulationIndex: 3, oscillator: { type: "sawtooth" }, modulation: { type: "square" }, envelope: { attack: 0.002, decay: 0.06, sustain: 0.05, release: 0.08 }, modulationEnvelope: { attack: 0.005, decay: 0.02, sustain: 0.1, release: 0.05 } });
       break;
     default:
-      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.2 } });
+      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.005, decay: 0.08, sustain: 0.15, release: 0.15 } });
   }
 
   connectToMaster(synth, channel);
