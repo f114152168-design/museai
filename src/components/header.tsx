@@ -1,19 +1,32 @@
 "use client";
 
+import { useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { getTier } from "@/lib/billing";
+import { getTier, redeemPromoCode } from "@/lib/billing";
 
 export function Header() {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const [showPromo, setShowPromo] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (pathname.startsWith("/auth")) return null;
 
   const currentTier = getTier();
   const isFree = currentTier === "free";
+
+  const handleRedeem = () => {
+    const result = redeemPromoCode(promoInput);
+    setPromoMsg({ ok: result.success, text: result.message });
+    if (result.success) {
+      setPromoInput("");
+      setShowPromo(false);
+    }
+  };
 
   return (
     <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
@@ -50,9 +63,28 @@ export function Header() {
           {session ? (
             <>
               {isFree && (
-                <Link href="/pricing" className="hidden sm:inline-flex text-xs px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 font-medium hover:bg-purple-200 transition-colors">
-                  升級 Pro
-                </Link>
+                <div className="relative">
+                  <button onClick={() => setShowPromo(!showPromo)}
+                    className="hidden sm:inline-flex text-xs px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 font-medium hover:bg-purple-200 transition-colors">
+                    解鎖 Pro
+                  </button>
+                  {showPromo && (
+                    <div className="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-xl p-3 w-64 z-50">
+                      <p className="text-xs text-gray-500 mb-2">輸入優惠碼解鎖 Pro 功能</p>
+                      <div className="flex gap-1">
+                        <input type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleRedeem()}
+                          placeholder="請輸入優惠碼" autoFocus
+                          className="flex-1 px-2 py-1.5 rounded border text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500" />
+                        <button onClick={handleRedeem}
+                          className="px-3 py-1.5 rounded bg-purple-600 text-white text-xs font-medium hover:bg-purple-500">解鎖</button>
+                      </div>
+                      {promoMsg && (
+                        <p className={`text-xs mt-1 ${promoMsg.ok ? "text-green-600" : "text-red-500"}`}>{promoMsg.text}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
               <span className="text-sm text-gray-500 hidden sm:block">{session.user?.email}</span>
               <button onClick={() => signOut()} className="text-sm px-3 py-1.5 rounded-lg border text-gray-600 hover:bg-gray-50 transition-colors">

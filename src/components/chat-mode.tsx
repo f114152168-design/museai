@@ -7,10 +7,10 @@ import { useApiStatus } from "@/hooks/use-api-status";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
 import { renderMidiToWav, downloadBlob } from "@/lib/audio-export";
 import { getDurationSeconds } from "@/lib/midi";
-import { getTier, setTier, TIER_LIMITS } from "@/lib/billing";
+import { getTier, redeemPromoCode, TIER_LIMITS } from "@/lib/billing";
+import type { Tier } from "@/lib/billing";
 import { PROMPT_PRESETS } from "@/lib/presets";
 import type { MidiData } from "@/lib/midi";
-import type { Tier } from "@/lib/billing";
 
 interface Message {
   role: "user" | "assistant";
@@ -25,7 +25,9 @@ export function ChatMode({ projectId }: { projectId: string }) {
   const addCommit = useProjectStore((s) => s.addCommit);
   const apiStatus = useApiStatus();
 
-  const [tier, setTierState] = useState<Tier>(getTier);
+  const [tier, setTierState] = useState<Tier>(getTier());
+  const [promoInput, setPromoInput] = useState("");
+  const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -46,9 +48,13 @@ export function ChatMode({ projectId }: { projectId: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleTierSwitch = (newTier: Tier) => {
-    setTierState(newTier);
-    setTier(newTier);
+  const handleRedeem = () => {
+    const result = redeemPromoCode(promoInput);
+    setPromoMsg({ ok: result.success, text: result.message });
+    if (result.success) {
+      setTierState("paid");
+      setPromoInput("");
+    }
   };
 
   const handleSend = async () => {
@@ -192,25 +198,29 @@ export function ChatMode({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Tier selector */}
+      {/* Pro status / Promo bar */}
       <div className="border-b bg-gray-50 px-4 py-2 flex items-center gap-2">
-        <span className="text-xs text-gray-500 font-medium">方案：</span>
-        <button onClick={() => handleTierSwitch("free")}
-          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-            tier === "free"
-              ? "bg-gray-800 text-white"
-              : "bg-white border text-gray-600 hover:bg-gray-100"
-          }`}>
-          Free · 30s 循環
-        </button>
-        <button onClick={() => handleTierSwitch("paid")}
-          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-            tier === "paid"
-              ? "bg-purple-600 text-white"
-              : "bg-white border text-gray-600 hover:bg-gray-100"
-          }`}>
-          Pro · 最長 3 分鐘
-        </button>
+        {tier === "paid" ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-600 text-white font-medium">Pro</span>
+            <span className="text-xs text-gray-500">完整編曲 · 最長 3 分鐘 · WAV 匯出</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-600 text-white font-medium">Free</span>
+            <span className="text-xs text-gray-500 mr-auto">30 秒循環 · 輸入優惠碼解鎖 Pro</span>
+            <input type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleRedeem()}
+              placeholder="優惠碼" className="w-24 px-2 py-1 rounded border text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500" />
+            <button onClick={handleRedeem}
+              className="text-xs px-2.5 py-1 rounded bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors">
+              解鎖
+            </button>
+            {promoMsg && (
+              <span className={`text-xs ${promoMsg.ok ? "text-green-600" : "text-red-500"}`}>{promoMsg.text}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
