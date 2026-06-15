@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMidiFromPrompt, generateLiveCodeFromPrompt, isOpenAIConfigured } from "@/lib/openai";
 import { generateFreeMidi, generatePaidMidi, generateStyleMidi, loopMidi, quantizeMidi, pluckMidi, arpeggiateMidi, addFourOnFloor } from "@/lib/midi";
+import { generateSongFromPrompt } from "@/lib/song-generator";
 
 type PostProcess = {
   quantize?: number;
@@ -40,16 +41,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ code, prompt });
     }
 
-    // Generate MIDI
+    // Generate MIDI — song generator produces full arrangement from prompt text
     let midi;
 
-    if (style && !isOpenAIConfigured()) {
-      // EDM style generator
+    const tierVal = (tier === "paid" ? "paid" : "free") as "free" | "paid";
+
+    if (isOpenAIConfigured()) {
+      midi = await generateMidiFromPrompt(prompt, tierVal);
+    } else if (style) {
+      // EDM style generator (when preset button clicked)
       midi = generateStyleMidi(style, bpm ?? 128);
-    } else if (isOpenAIConfigured()) {
-      midi = await generateMidiFromPrompt(prompt, (tier as "free" | "paid") ?? "free");
     } else {
-      midi = tier === "paid" ? generatePaidMidi(bpm ?? 128) : generateFreeMidi(bpm ?? 120);
+      // Prompt → full song arrangement (parses prompt for genre/mood/key/bpm)
+      midi = generateSongFromPrompt(prompt, tierVal);
     }
 
     // Apply EDM post-processing
