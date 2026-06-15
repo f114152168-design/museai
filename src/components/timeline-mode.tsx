@@ -43,13 +43,14 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
   const [playBeat, setPlayBeat] = useState(0);
   const [showNoteNames, setShowNoteNames] = useState(true);
 
-  const [midi, setMidi] = useState<MidiData | null>(() => {
+  const [midi, setMidi] = useState<MidiData | null>(null);
+  // Reactive to project.tracks — picks up tracks added by MelodyGenerator etc.
+  useEffect(() => {
     for (let i = project.tracks.length - 1; i >= 0; i--) {
       const d = project.tracks[i].midiData;
-      if (d) try { return JSON.parse(d) as MidiData; } catch {}
+      if (d) try { setMidi(JSON.parse(d) as MidiData); return; } catch {}
     }
-    return null;
-  });
+  }, [project.tracks]);
 
   const totalBeats = midi?.totalBeats ?? 16;
   const bars = Math.ceil(totalBeats / 4);

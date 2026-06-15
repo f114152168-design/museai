@@ -211,22 +211,15 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
 
     // ── Main melody (from generated motif) ──
     if (hasMelody) {
-      // Select a portion of the melody for this section
-      const sectionLength = section.bars * 4;
-      const melodySlice = melodyNotes.filter((n) => {
-        const relStart = n.startTime % totalBeats;
-        return relStart >= (n.startTime) && relStart < (n.startTime + sectionLength);
-      });
-
-      for (const note of melodySlice) {
-        // Adjust velocity by energy
-        const adjustedNote = {
+      const secStartBeats = section.startBar * 4;
+      const secEndBeats = (section.startBar + section.bars) * 4;
+      for (const note of melodyNotes) {
+        if (note.startTime < secStartBeats || note.startTime >= secEndBeats) continue;
+        allFx.push({
           ...note,
-          startTime: secStart + (note.startTime % sectionLength),
           velocity: note.velocity * (0.5 + energy * 0.5),
           channel: 5,
-        };
-        allFx.push(adjustedNote);
+        });
       }
     }
 
