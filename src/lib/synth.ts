@@ -7,11 +7,16 @@ let _ctx: {
   delay: Tone.FeedbackDelay;
   compressor: Tone.Compressor;
   masterGain: Tone.Gain;
+  sidechainBus: Tone.Gain;       // non-kick instruments go through this
+  sidechainTrigger: Tone.Gain;   // kick goes directly to compressor (sidechain trigger)
   channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth>;
 } | null = null;
 
 let initialized = false;
 let isLooping = false;
+
+// Sidechain ducking state
+let _sidechainScheduleIds: number[] = [];
 
 function ensureCtx() {
   if (_ctx) return _ctx;
@@ -19,11 +24,48 @@ function ensureCtx() {
   const reverb = new Tone.Reverb({ decay: 2.5, wet: 0.15 }).toDestination();
   const delay = new Tone.FeedbackDelay("8n", 0.2).connect(reverb);
   const compressor = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.25 }).connect(delay);
+
+  // Master output bus
   const masterGain = new Tone.Gain(0.8).connect(compressor);
+
+  // Sidechain bus: all non-kick instruments → this gain → compressor
+  // This gain gets automated down on every kick beat to simulate sidechain pumping
+  const sidechainBus = new Tone.Gain(1).connect(masterGain);
+
+  // Sidechain trigger bus: kick connects here (directly to compressor for sidechain detection)
+  // Actually, Tone.js doesn't have native sidechain input for Compressor,
+  // so we simulate by automating sidechainBus.gain on each kick beat
+  const sidechainTrigger = new Tone.Gain(0.8).connect(masterGain);
+
   const channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth> = {};
 
-  _ctx = { reverb, delay, compressor, masterGain, channelInstruments };
+  _ctx = { reverb, delay, compressor, masterGain, sidechainBus, sidechainTrigger, channelInstruments };
   return _ctx;
+}
+
+/** Schedule the sidechain pumping automation */
+function scheduleSidechainPumping(midi: MidiData) {
+  const ctx = ensureCtx();
+  // Clear previous schedules
+  for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
+  _sidechainScheduleIds = [];
+
+  const totalBeats = midi.totalBeats || 16;
+  // Find kick notes (channel 0)
+  const kickTrack = midi.tracks.find((t) => t.channel === 0);
+  const kickTimes = kickTrack?.notes.map((n) => n.startTime) ?? [];
+
+  for (const time of kickTimes) {
+    // Duck gain at kick time, recover over ~0.2s
+    const id = Tone.Transport.schedule(() => {
+      if (ctx.sidechainBus.gain.value === 1) {
+        // Quick duck to 30% then recover with envelope
+        ctx.sidechainBus.gain.rampTo(0.3, 0.01);
+        ctx.sidechainBus.gain.rampTo(1, 0.2);
+      }
+    }, time.toString());
+    _sidechainScheduleIds.push(id);
+  }
 }
 
 export async function initAudio() {
@@ -34,8 +76,14 @@ export async function initAudio() {
   }
 }
 
-function connectToMaster(node: Tone.ToneAudioNode) {
-  node.connect(ensureCtx().masterGain);
+function connectToMaster(node: Tone.ToneAudioNode, channel: number) {
+  const ctx = ensureCtx();
+  // Kick (channel 0) bypasses sidechain and goes directly to compressor
+  if (channel === 0) {
+    node.connect(ctx.sidechainTrigger);
+  } else {
+    node.connect(ctx.sidechainBus);
+  }
 }
 
 function getChannelSynth(channel: number) {
@@ -67,7 +115,7 @@ function getChannelSynth(channel: number) {
       synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.2 } });
   }
 
-  synth.connect(ensureCtx().masterGain);
+  connectToMaster(synth, channel);
   ctx.channelInstruments[channel] = synth;
   return synth;
 }
@@ -99,6 +147,14 @@ export async function playMidi(midi: MidiData): Promise<void> {
   Tone.Transport.position = 0;
 
   const totalBeats = midi.totalBeats || 16;
+
+  // Reset sidechain bus gain
+  ensureCtx().sidechainBus.gain.value = 1;
+
+  // Schedule sidechain pumping if kick channel exists
+  if (midi.tracks.some((t) => t.channel === 0 && t.notes.length > 0)) {
+    scheduleSidechainPumping(midi);
+  }
 
   for (const track of midi.tracks) {
     if (track.notes.length === 0) continue;
@@ -133,6 +189,10 @@ export function stopMusic() {
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
   isLooping = false;
+  // Clear sidechain schedules
+  for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
+  _sidechainScheduleIds = [];
+  _ctx.sidechainBus.gain.value = 1;
   Object.keys(_ctx.channelInstruments).forEach((key) => {
     const inst = _ctx!.channelInstruments[Number(key)];
     if (inst && "disconnect" in inst) inst.disconnect();

@@ -38,6 +38,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
     },
   ]);
   const [input, setInput] = useState("");
+  const [currentPreset, setCurrentPreset] = useState<typeof PROMPT_PRESETS[number] | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -68,10 +69,14 @@ export function ChatMode({ projectId }: { projectId: string }) {
     setIsGenerating(true);
 
     try {
+      const apiBody: Record<string, unknown> = { prompt, mode: "chat", tier };
+      if (currentPreset?.style) apiBody.style = currentPreset.style;
+      if (currentPreset?.postProcess) apiBody.postProcess = currentPreset.postProcess;
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, mode: "chat", tier }),
+        body: JSON.stringify(apiBody),
       });
 
       if (!res.ok) {
@@ -283,8 +288,12 @@ export function ChatMode({ projectId }: { projectId: string }) {
       <div className="border-t px-4 pt-3 pb-2 bg-white">
         <div className="flex flex-wrap gap-1.5 mb-2">
           {PROMPT_PRESETS.map((preset) => (
-            <button key={preset.label} onClick={() => setInput(preset.prompt)}
-              className="px-2.5 py-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-xs hover:bg-purple-100 hover:border-purple-300 transition-colors">
+            <button key={preset.label} onClick={() => { setInput(preset.prompt); setCurrentPreset(preset); }}
+              className={`px-2.5 py-1 rounded-full border text-xs transition-colors ${
+                currentPreset?.label === preset.label
+                  ? "border-purple-500 bg-purple-100 text-purple-800"
+                  : "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 hover:border-purple-300"
+              }`}>
               {preset.label} · {preset.bpm}BPM
             </button>
           ))}
