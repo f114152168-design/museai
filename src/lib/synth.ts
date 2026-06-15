@@ -1,33 +1,46 @@
 import * as Tone from "tone";
 import { midiToFrequency, type MidiData, type MidiNote } from "@/lib/midi";
 
+// ── Lazy singleton — only created on first audio use ──
+let _ctx: {
+  reverb: Tone.Reverb;
+  delay: Tone.FeedbackDelay;
+  compressor: Tone.Compressor;
+  masterGain: Tone.Gain;
+  channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth>;
+} | null = null;
+
 let initialized = false;
-let transportListenerId: number | null = null;
-let onPositionChange: ((beats: number) => void) | null = null;
 let isLooping = false;
 
+function ensureCtx() {
+  if (_ctx) return _ctx;
+
+  const reverb = new Tone.Reverb({ decay: 2.5, wet: 0.15 }).toDestination();
+  const delay = new Tone.FeedbackDelay("8n", 0.2).connect(reverb);
+  const compressor = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.25 }).connect(delay);
+  const masterGain = new Tone.Gain(0.8).connect(compressor);
+  const channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth> = {};
+
+  _ctx = { reverb, delay, compressor, masterGain, channelInstruments };
+  return _ctx;
+}
+
 export async function initAudio() {
+  if (typeof window === "undefined") return;
   if (!initialized) {
     await Tone.start();
     initialized = true;
   }
 }
 
-// ── Master Chain ──
-const reverb = new Tone.Reverb({ decay: 2.5, wet: 0.15 }).toDestination();
-const delay = new Tone.FeedbackDelay("8n", 0.2).connect(reverb);
-const compressor = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.25 }).connect(delay);
-const masterGain = new Tone.Gain(0.8).connect(compressor);
-
 function connectToMaster(node: Tone.ToneAudioNode) {
-  node.connect(masterGain);
+  node.connect(ensureCtx().masterGain);
 }
 
-// ── Channel → Instrument mapping ──
-const channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth> = {};
-
 function getChannelSynth(channel: number) {
-  if (channelInstruments[channel]) return channelInstruments[channel];
+  const ctx = ensureCtx();
+  if (ctx.channelInstruments[channel]) return ctx.channelInstruments[channel];
 
   let synth: Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth;
 
@@ -54,8 +67,8 @@ function getChannelSynth(channel: number) {
       synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.2 } });
   }
 
-  synth.connect(masterGain);
-  channelInstruments[channel] = synth;
+  synth.connect(ensureCtx().masterGain);
+  ctx.channelInstruments[channel] = synth;
   return synth;
 }
 
@@ -76,20 +89,8 @@ export function setLoop(enabled: boolean) {
   isLooping = enabled;
 }
 
-export function setPositionCallback(cb: ((beats: number) => void) | null) {
-  onPositionChange = cb;
-  if (transportListenerId !== null) {
-    Tone.Transport.clear(transportListenerId);
-    transportListenerId = null;
-  }
-  if (cb) {
-    transportListenerId = Tone.Transport.scheduleRepeat(() => {
-      onPositionChange?.(Tone.Transport.position as unknown as number);
-    }, "0.1");
-  }
-}
-
 export async function playMidi(midi: MidiData): Promise<void> {
+  if (typeof window === "undefined") return;
   await initAudio();
 
   Tone.Transport.stop();
@@ -108,20 +109,16 @@ export async function playMidi(midi: MidiData): Promise<void> {
 
   Tone.Transport.start();
 
-  const loopDuration = totalBeats * (60 / midi.bpm);
-
   if (isLooping) {
-    return new Promise((resolve) => {
-      const id = Tone.Transport.schedule(() => {
+    return new Promise(() => {
+      Tone.Transport.schedule(() => {
         Tone.Transport.position = 0;
-        // Re-schedule notes for looping
         for (const track of midi.tracks) {
           for (const note of track.notes) {
             scheduleNote(note, midi.bpm);
           }
         }
       }, totalBeats.toString());
-      // Never resolve while looping - user must call stopMusic()
     });
   }
 
@@ -130,14 +127,16 @@ export async function playMidi(midi: MidiData): Promise<void> {
 }
 
 export function stopMusic() {
+  if (typeof window === "undefined") return;
+  if (!_ctx) return;
   Tone.Transport.stop();
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
   isLooping = false;
-  Object.keys(channelInstruments).forEach((key) => {
-    const inst = channelInstruments[Number(key)];
+  Object.keys(_ctx.channelInstruments).forEach((key) => {
+    const inst = _ctx!.channelInstruments[Number(key)];
     if (inst && "disconnect" in inst) inst.disconnect();
-    delete channelInstruments[Number(key)];
+    delete _ctx!.channelInstruments[Number(key)];
   });
 }
 
