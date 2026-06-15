@@ -5,7 +5,7 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { getTier, redeemPromoCode } from "@/lib/billing";
+import { useTier } from "@/hooks/use-tier";
 
 export function Header() {
   const { data: session } = useSession();
@@ -13,14 +13,12 @@ export function Header() {
   const [showPromo, setShowPromo] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { tier, redeem, isFree } = useTier();
 
   if (pathname.startsWith("/auth")) return null;
 
-  const currentTier = getTier();
-  const isFree = currentTier === "free";
-
   const handleRedeem = () => {
-    const result = redeemPromoCode(promoInput);
+    const result = redeem(promoInput);
     setPromoMsg({ ok: result.success, text: result.message });
     if (result.success) {
       setPromoInput("");

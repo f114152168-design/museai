@@ -4,11 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import { useProjectStore } from "@/lib/store";
 import { playMidi, stopMusic } from "@/lib/synth";
 import { useApiStatus } from "@/hooks/use-api-status";
+import { useTier } from "@/hooks/use-tier";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
 import { renderMidiToWav, downloadBlob } from "@/lib/audio-export";
 import { getDurationSeconds } from "@/lib/midi";
-import { getTier, redeemPromoCode, TIER_LIMITS } from "@/lib/billing";
-import type { Tier } from "@/lib/billing";
+import { TIER_LIMITS } from "@/lib/billing";
 import { PROMPT_PRESETS } from "@/lib/presets";
 import type { MidiData } from "@/lib/midi";
 
@@ -24,8 +24,8 @@ export function ChatMode({ projectId }: { projectId: string }) {
   const addTrack = useProjectStore((s) => s.addTrack);
   const addCommit = useProjectStore((s) => s.addCommit);
   const apiStatus = useApiStatus();
+  const { tier, redeem } = useTier();
 
-  const [tier, setTierState] = useState<Tier>(getTier());
   const [promoInput, setPromoInput] = useState("");
   const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [messages, setMessages] = useState<Message[]>([
@@ -49,12 +49,9 @@ export function ChatMode({ projectId }: { projectId: string }) {
   }, [messages]);
 
   const handleRedeem = () => {
-    const result = redeemPromoCode(promoInput);
+    const result = redeem(promoInput);
     setPromoMsg({ ok: result.success, text: result.message });
-    if (result.success) {
-      setTierState("paid");
-      setPromoInput("");
-    }
+    if (result.success) setPromoInput("");
   };
 
   const handleSend = async () => {

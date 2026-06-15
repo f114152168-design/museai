@@ -6,8 +6,9 @@ import { useProjectStore } from "@/lib/store";
 import { ChatMode } from "@/components/chat-mode";
 import { TimelineMode } from "@/components/timeline-mode";
 import { LiveCodingMode } from "@/components/live-coding-mode";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
-import { getTier } from "@/lib/billing";
+import { useTier } from "@/hooks/use-tier";
 import { VersionHistory } from "@/components/version-history";
 
 type Mode = "chat" | "timeline" | "livecode";
@@ -26,6 +27,7 @@ export default function ProjectEditor() {
   const project = useProjectStore((s) => s.getProject(id));
   const updateProject = useProjectStore((s) => s.updateProject);
   const hydrated = useProjectStore((s) => s.hydrated);
+  const { isFree } = useTier();
 
   const [mode, setMode] = useState<Mode>("chat");
   const [showHistory, setShowHistory] = useState(false);
@@ -55,7 +57,7 @@ export default function ProjectEditor() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {getTier() === "free" && (
+      {isFree && (
         <div className="px-4 py-2 bg-gradient-to-r from-purple-50 to-cyan-50 border-b border-purple-200 flex items-center justify-between text-sm">
           <p className="text-xs text-gray-600">Free 方案 — 每次最多生成 30 秒循環。升級 Pro 解鎖完整編曲。</p>
           <a href="/pricing" className="shrink-0 text-xs px-3 py-1 rounded-full bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors">升級 Pro</a>
@@ -116,7 +118,9 @@ export default function ProjectEditor() {
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-hidden">
-          <ModeComponent projectId={id} />
+          <ErrorBoundary>
+            <ModeComponent projectId={id} />
+          </ErrorBoundary>
         </div>
         {showHistory && (
           <div className="w-80 border-l bg-gray-50 overflow-y-auto shrink-0">
