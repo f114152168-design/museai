@@ -129,7 +129,9 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
         },
         playMidi: async (midi: MidiData) => {
           setLastMidi(midi);
-          await playMidi(midi, addOutput);
+          addOutput("▶ 播放 MIDI...");
+          await playMidi(midi);
+          addOutput("✓ 播放完成");
         },
         generate: async (prompt: string) => {
           addOutput(`AI 生成：「${prompt}」`);
