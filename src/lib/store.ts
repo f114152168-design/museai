@@ -81,6 +81,7 @@ interface ProjectStore {
   getProject: (id: string) => Project | undefined;
   updateProject: (id: string, data: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  clearStore: () => void;
   setCurrentProject: (id: string | null) => void;
   addTrack: (projectId: string, track: Partial<Track>) => Track;
   updateTrack: (projectId: string, trackId: string, data: Partial<Track>) => void;
@@ -220,7 +221,14 @@ export const useProjectStore = create<ProjectStore>()(
         createdAt: new Date().toISOString(),
       }),
 
-      addCommit: (projectId, data) => {
+      clearStore: () => {
+    set({ projects: DEFAULT_PROJECTS, currentProjectId: null });
+    try { localStorage.removeItem("museai-storage"); } catch {}
+    try { localStorage.removeItem("museai_tier"); } catch {}
+    try { localStorage.removeItem("museai_promo_redeemed"); } catch {}
+  },
+
+  addCommit: (projectId, data) => {
         const project = get().getProject(projectId);
         const parentId = project?.commits.length
           ? project.commits[project.commits.length - 1].id
@@ -295,6 +303,15 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: "museai-storage",
+      version: 1,
+      migrate: (persisted) => {
+        const raw = persisted as any;
+        if (!raw || !Array.isArray(raw?.projects)) return { projects: DEFAULT_PROJECTS };
+        return {
+          projects: raw.projects.filter((p: any) => p && typeof p.id === "string"),
+          currentProjectId: typeof raw.currentProjectId === "string" ? raw.currentProjectId : null,
+        };
+      },
       onRehydrateStorage: () => () => {
         useProjectStore.setState({ hydrated: true });
       },
