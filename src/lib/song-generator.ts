@@ -209,7 +209,7 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
       }
     }
 
-    // ── Main melody (from generated motif) ──
+    // ── Main melody (from generated motif) — dedicated channel 6 ──
     if (hasMelody) {
       const secStartBeats = section.startBar * 4;
       const secEndBeats = (section.startBar + section.bars) * 4;
@@ -218,7 +218,7 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
         allFx.push({
           ...note,
           velocity: note.velocity * (0.5 + energy * 0.5),
-          channel: 5,
+          channel: 6,
         });
       }
     }
@@ -260,7 +260,11 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
   if (allHats.length > 0) tracks.push({ name: "Hi-Hat", channel: 2, instrument: "hihat", notes: allHats });
   if (allBass.length > 0) tracks.push({ name: "Bass", channel: 3, instrument: "bass", notes: allBass });
   if (allChords.length > 0) tracks.push({ name: "Chord", channel: 4, instrument: "pad", notes: allChords });
-  if (allFx.length > 0) tracks.push({ name: "Lead", channel: 5, instrument: "lead", notes: allFx });
+  // Separate melody (ch 6) from FX (ch 5)
+  const melodyOnlyNotes = allFx.filter((n) => n.channel === 6);
+  const fxOnlyNotes = allFx.filter((n) => n.channel === 5);
+  if (melodyOnlyNotes.length > 0) tracks.push({ name: "Melody", channel: 6, instrument: "lead", notes: melodyOnlyNotes });
+  if (fxOnlyNotes.length > 0) tracks.push({ name: "FX", channel: 5, instrument: "arp", notes: fxOnlyNotes });
 
   const songSections = sections.map((s) => ({
     name: s.name,

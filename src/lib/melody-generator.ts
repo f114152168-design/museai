@@ -47,61 +47,65 @@ export function generateMelody(params: MelodyParams): MidiData {
   const totalBeats = bars * 4;
   const scalePitches = getScalePitches(key, scale);
 
-  // Complexity → rhythmic grid & density
-  // 0 = whole notes only, 1 = 16th notes
-  const minGrid = 0.5 + (1 - complexity) * 1.5;   // 0.5–2 beats
-  const maxGrid = 4 - complexity * 3.5;            // 0.5–4 beats
-  const density = 0.15 + complexity * 0.7;          // 15–85% fill
+  // Complexity → rhythmic grid & density (higher density default)
+  const minGrid = Math.max(0.25, 0.5 - complexity * 0.3); // 0.2–0.5 beats
+  const maxGrid = 2 - complexity * 1.2;                    // 0.8–2 beats
+  const density = 0.5 + complexity * 0.4;                  // 50–90% fill
 
-  // NoteLength → seconds (converted from beats)
-  const minDur = 0.05 + noteLength * 0.1;           // 0.05–0.15 beats → pluck
-  const maxDur = 0.15 + noteLength * 3;             // 0.15–3.15 beats → legato
-
-  // Root & fifth for occasional chord leaps
-  const root = keyToPitchBase(key) + 12; // +1 octave
-  const fifth = root + 7;
+  // NoteLength (beats)
+  const minDur = 0.08 + noteLength * 0.2;
+  const maxDur = 0.2 + noteLength * 2.5;
 
   const notes: MidiNote[] = [];
   let beat = 0;
 
-  // Deterministic seed from key+scale+complexity
+  // Deterministic seed
   let seed = key.charCodeAt(0) + scale.length + complexity * 100;
   function rng() {
     seed = (seed * 16807 + 0) % 2147483647;
     return seed / 2147483647;
   }
 
-  // Generate rhythmic pattern
+  let lastPitch = scalePitches[0]; // start on root
+  let lastDir = 1; // 1 = up, -1 = down
+
   while (beat < totalBeats) {
-    // Pick grid size for this note
     const gridStep = minGrid + rng() * (maxGrid - minGrid);
-    const startTime = Math.round(beat / 0.125) * 0.125;
+    const startTime = Math.round(beat / 0.25) * 0.25;
     if (startTime >= totalBeats) break;
 
-    // Decide if this slot gets a note (density check)
     if (rng() < density) {
-      // Pick pitch from scale — favor root, third, fifth
-      const r = rng();
+      // Stepwise melody: pick next pitch close to last one
+      const step = Math.floor(rng() * 3) + 1; // 1–3 steps on scale
+      const maxStep = 2 + Math.floor(complexity * 3); // 2–5 steps max
+
       let pitch: number;
-      if (r < 0.35) {
-        // Root or octave
-        pitch = scalePitches[Math.floor(rng() * 3) * 7] ?? scalePitches[0]; // 0, 7, 14
-      } else if (r < 0.6) {
-        // Third or fifth
-        const idx = Math.floor(rng() * 2) * 2 + 1; // 1 (third) or 3 (fifth)
-        pitch = scalePitches[Math.min(idx, scalePitches.length - 1)];
+      if (rng() < 0.2) {
+        // Jump to root, third, or fifth (resolution points)
+        const targets = [0, 2, 4];
+        pitch = scalePitches[targets[Math.floor(rng() * targets.length)]];
+        // Pick octave
+        const targetOct = Math.floor(rng() * 3);
+        pitch += targetOct * 12;
       } else {
-        // Any scale tone
-        pitch = scalePitches[Math.floor(rng() * scalePitches.length)];
+        // Stepwise motion
+        if (rng() < 0.3) lastDir *= -1; // change direction sometimes
+        const steps = Math.min(step, maxStep) * lastDir;
+        const lastIdx = scalePitches.indexOf(lastPitch) >= 0
+          ? scalePitches.indexOf(lastPitch)
+          : Math.floor(scalePitches.length / 2);
+        const newIdx = Math.max(0, Math.min(scalePitches.length - 1, lastIdx + steps));
+        pitch = scalePitches[newIdx];
       }
 
-      // Add octave leaps for drama
-      if (rng() < 0.15 * complexity) pitch += 12;
+      // Keep in range
+      pitch = Math.max(48, Math.min(96, pitch));
 
       const dur = minDur + rng() * (maxDur - minDur);
-      const velocity = 0.6 + rng() * 0.35;
+      const velocity = 0.65 + rng() * 0.3;
 
-      notes.push({ pitch, startTime, duration: dur, velocity, channel: 5 });
+      notes.push({ pitch, startTime, duration: dur, velocity, channel: 6 });
+      lastPitch = pitch;
     }
 
     beat += gridStep;

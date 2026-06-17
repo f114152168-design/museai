@@ -5,7 +5,7 @@ import { useProjectStore } from "@/lib/store";
 import { playMidi, stopMusic, setLoop, initAudio } from "@/lib/synth";
 import { getNoteName, getDurationSeconds, type MidiData, type MidiNote } from "@/lib/midi";
 
-const CHANNEL_COLORS = ["#7c3aed","#ef4444","#f59e0b","#10b981","#06b6d4","#f97316","#8b5cf6","#ec4899","#14b8a6","#6366f1"];
+const CHANNEL_COLORS = ["#7c3aed","#ef4444","#f59e0b","#10b981","#06b6d4","#f97316","#ec4899","#8b5cf6","#14b8a6","#6366f1"];
 const CHANNEL_ICONS = ["🥁","🥁","🔔","🎸","🎹","🎻","🎹","🔔","🎸","🥁"];
 
 const TITLE_H = 44;

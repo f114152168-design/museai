@@ -117,6 +117,10 @@ function getChannelSynth(channel: number) {
     case 5:
       synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2.5, modulationIndex: 3, oscillator: { type: "sawtooth" }, modulation: { type: "square" }, envelope: { attack: 0.002, decay: 0.06, sustain: 0.05, release: 0.08 }, modulationEnvelope: { attack: 0.005, decay: 0.02, sustain: 0.1, release: 0.05 } });
       break;
+    // Melody — clear bright lead (PolySynth + Synth, not FM)
+    case 6:
+      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "sawtooth" }, envelope: { attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.3 }, volume: 2 });
+      break;
     default:
       synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.005, decay: 0.08, sustain: 0.15, release: 0.15 } });
   }

@@ -15,7 +15,8 @@ const CHANNEL_COLORS = [
   "#f59e0b", // 2 HiHat - amber
   "#10b981", // 3 Bass - green
   "#06b6d4", // 4 Pad - cyan
-  "#f97316", // 5 Lead - orange
+  "#f97316", // 5 FX - orange
+  "#ec4899", // 6 Melody - pink
   "#8b5cf6", // other
 ];
 
