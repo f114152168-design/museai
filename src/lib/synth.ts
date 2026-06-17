@@ -1,71 +1,73 @@
 import * as Tone from "tone";
 import { midiToFrequency, type MidiData, type MidiNote } from "@/lib/midi";
 
-// ── Lazy singleton — only created on first audio use ──
 let _ctx: {
+  masterGain: Tone.Gain;
+  limiter: Tone.Limiter;
   reverb: Tone.Reverb;
   delay: Tone.FeedbackDelay;
-  compressor: Tone.Compressor;
-  masterGain: Tone.Gain;
-  sidechainBus: Tone.Gain;       // non-kick instruments go through this
-  sidechainTrigger: Tone.Gain;   // kick goes directly to compressor (sidechain trigger)
-  channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth>;
+  channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth | Tone.MonoSynth>;
+  perChannel: Record<number, { eq: Tone.EQ3; comp: Tone.Compressor; gain: Tone.Gain }>;
+  sidechainBus: Tone.Gain;
+  sidechainTrigger: Tone.Gain;
 } | null = null;
 
 let initialized = false;
 let isLooping = false;
-
-// Sidechain ducking state
 let _sidechainScheduleIds: number[] = [];
 
 function ensureCtx() {
   if (_ctx) return _ctx;
 
-  const reverb = new Tone.Reverb({ decay: 2.5, wet: 0.15 }).toDestination();
-  const delay = new Tone.FeedbackDelay("8n", 0.2).connect(reverb);
-  const compressor = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.25 }).connect(delay);
+  // ── Master chain: Limiter → Compressor → Reverb/Delay sends ──
+  const limiter = new Tone.Limiter(-3).toDestination();
+  const masterComp = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.005, release: 0.15 }).connect(limiter);
+  const masterGain = new Tone.Gain(0.75).connect(masterComp);
 
-  // Master output bus
-  const masterGain = new Tone.Gain(0.8).connect(compressor);
+  // Reverb (send effect)
+  const reverb = new Tone.Reverb({ decay: 2.8, wet: 0.25 }).connect(masterGain);
+  // Delay (send effect)
+  const delay = new Tone.FeedbackDelay("8n", 0.15).connect(reverb);
 
-  // Sidechain bus: all non-kick instruments → this gain → compressor
-  // This gain gets automated down on every kick beat to simulate sidechain pumping
+  // Sidechain bus: non-kick → ducking gain → master
   const sidechainBus = new Tone.Gain(1).connect(masterGain);
+  // Kick goes directly to master (triggers the sidechain ducking)
+  const sidechainTrigger = new Tone.Gain(0.85).connect(masterGain);
 
-  // Sidechain trigger bus: kick connects here (directly to compressor for sidechain detection)
-  // Actually, Tone.js doesn't have native sidechain input for Compressor,
-  // so we simulate by automating sidechainBus.gain on each kick beat
-  const sidechainTrigger = new Tone.Gain(0.8).connect(masterGain);
+  const channelInstruments: Record<number, any> = {};
+  const perChannel: Record<number, { eq: Tone.EQ3; comp: Tone.Compressor; gain: Tone.Gain }> = {};
 
-  const channelInstruments: Record<number, Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth> = {};
-
-  _ctx = { reverb, delay, compressor, masterGain, sidechainBus, sidechainTrigger, channelInstruments };
+  _ctx = { masterGain, limiter, reverb, delay, channelInstruments, perChannel, sidechainBus, sidechainTrigger };
   return _ctx;
 }
 
-/** Schedule the sidechain pumping automation */
-function scheduleSidechainPumping(midi: MidiData) {
+function getChannelChain(channel: number, compOpts?: Partial<Tone.CompressorOptions>) {
   const ctx = ensureCtx();
-  // Clear previous schedules
-  for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
-  _sidechainScheduleIds = [];
+  if (ctx.perChannel[channel]) return ctx.perChannel[channel];
 
-  const totalBeats = midi.totalBeats || 16;
-  // Find kick notes (channel 0)
-  const kickTrack = midi.tracks.find((t) => t.channel === 0);
-  const kickTimes = kickTrack?.notes.map((n) => n.startTime) ?? [];
+  const eq = new Tone.EQ3(0, 0, 0);
+  const comp = new Tone.Compressor({
+    threshold: compOpts?.threshold ?? -20,
+    ratio: compOpts?.ratio ?? 2.5,
+    attack: compOpts?.attack ?? 0.003,
+    release: compOpts?.release ?? 0.1,
+  });
+  const gain = new Tone.Gain(1);
 
-  for (const time of kickTimes) {
-    // Duck gain at kick time, recover over ~0.2s
-    const id = Tone.Transport.schedule(() => {
-      if (ctx.sidechainBus.gain.value === 1) {
-        // Quick duck to 30% then recover with envelope
-        ctx.sidechainBus.gain.rampTo(0.3, 0.01);
-        ctx.sidechainBus.gain.rampTo(1, 0.2);
-      }
-    }, time.toString());
-    _sidechainScheduleIds.push(id);
+  // Route: instrument → eq → comp → gain → bus
+  eq.connect(comp);
+  comp.connect(gain);
+
+  if (channel === 0) {
+    // Kick → sidechainTrigger (no sidechain ducking)
+    gain.connect(ctx.sidechainTrigger);
+  } else {
+    // Everything else → sidechainBus (gets ducked on kick)
+    gain.connect(ctx.sidechainBus);
   }
+
+  ctx.perChannel[channel] = { eq, comp, gain };
+  return ctx.perChannel[channel];
 }
 
 export async function initAudio() {
@@ -76,56 +78,146 @@ export async function initAudio() {
   }
 }
 
-function connectToMaster(node: Tone.ToneAudioNode, channel: number) {
-  const ctx = ensureCtx();
-  // Kick (channel 0) bypasses sidechain and goes directly to compressor
-  if (channel === 0) {
-    node.connect(ctx.sidechainTrigger);
-  } else {
-    node.connect(ctx.sidechainBus);
-  }
-}
-
 function getChannelSynth(channel: number) {
   const ctx = ensureCtx();
   if (ctx.channelInstruments[channel]) return ctx.channelInstruments[channel];
 
-  let synth: Tone.PolySynth | Tone.MembraneSynth | Tone.NoiseSynth | Tone.MetalSynth;
+  let synth: any;
 
   switch (channel) {
-    // Kick — punchy sub
-    case 0:
-      synth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 5, envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.08 } });
+    // ── 0: KICK — punchy electronic kick ──
+    case 0: {
+      const chain = getChannelChain(channel, { threshold: -14, ratio: 4 });
+      synth = new Tone.MembraneSynth({
+        pitchDecay: 0.008, octaves: 5,
+        envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.06 },
+      });
+      chain.eq.low.value = 4;
+      chain.eq.high.value = -2;
+      chain.gain.gain.value = 1.2;
+      synth.connect(chain.eq);
       break;
-    // Snare / Clap
-    case 1:
-      synth = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.12 } });
+    }
+
+    // ── 1: SNARE/CLAP — layered noise + tone ──
+    case 1: {
+      const chain = getChannelChain(channel, { threshold: -16 });
+      synth = new Tone.NoiseSynth({
+        noise: { type: "white" },
+        envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.1 },
+      });
+      chain.eq.low.value = -6;
+      chain.eq.mid.value = 3;
+      chain.eq.high.value = 4;
+      chain.gain.gain.value = 0.7;
+      const toneLayer = new Tone.Synth({ oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 } });
+      toneLayer.volume.value = -6;
+      toneLayer.connect(chain.eq);
+      synth.connect(chain.eq);
+      (synth as any)._toneLayer = toneLayer;
       break;
-    // Hi-hat — tight click
-    case 2:
-      synth = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 800 });
+    }
+
+    // ── 2: HI-HAT — tight electronic hat ──
+    case 2: {
+      const chain = getChannelChain(channel);
+      synth = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.01 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 800,
+      });
+      chain.eq.low.value = -12;
+      chain.eq.mid.value = -4;
+      chain.eq.high.value = 6;
+      chain.gain.gain.value = 0.5;
+      synth.connect(chain.eq);
       break;
-    // Bass — gritty FM sub
-    case 3:
-      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 0.75, modulationIndex: 2.5, oscillator: { type: "square" }, modulation: { type: "sine" }, envelope: { attack: 0.002, decay: 0.15, sustain: 0.2, release: 0.3 }, modulationEnvelope: { attack: 0.01, decay: 0.05, sustain: 0.2, release: 0.2 } });
+    }
+
+    // ── 3: BASS — saturated sub + mid bite ──
+    case 3: {
+      const chain = getChannelChain(channel, { threshold: -16, ratio: 3 });
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 0.75, modulationIndex: 2.5,
+        oscillator: { type: "square" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.003, decay: 0.2, sustain: 0.15, release: 0.35 },
+        modulationEnvelope: { attack: 0.01, decay: 0.05, sustain: 0.15, release: 0.2 },
+      });
+      chain.eq.low.value = 5;
+      chain.eq.mid.value = 2;
+      chain.eq.high.value = -4;
+      chain.gain.gain.value = 0.9;
+      const sat = new Tone.Distortion(0.15);
+      synth.connect(sat);
+      sat.connect(chain.eq);
       break;
-    // Chord / Supersaw — fast attack for stabs, full for pads
-    case 4:
-      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 1.5, modulationIndex: 4, oscillator: { type: "sawtooth" }, modulation: { type: "sine" }, envelope: { attack: 0.003, decay: 0.3, sustain: 0.6, release: 1 }, modulationEnvelope: { attack: 0.005, decay: 0.1, sustain: 0.4, release: 0.8 } });
+    }
+
+    // ── 4: CHORD — supersaw with chorus ──
+    case 4: {
+      const chain = getChannelChain(channel);
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 1.5, modulationIndex: 4,
+        oscillator: { type: "sawtooth" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.005, decay: 0.4, sustain: 0.5, release: 1.2 },
+        modulationEnvelope: { attack: 0.01, decay: 0.15, sustain: 0.3, release: 0.8 },
+      });
+      chain.eq.low.value = -2;
+      chain.eq.mid.value = 3;
+      chain.eq.high.value = 4;
+      chain.gain.gain.value = 0.6;
+      const chorus = new Tone.Chorus(0.5, 2.5, 0.35).start();
+      synth.connect(chorus);
+      chorus.connect(chain.eq);
       break;
-    // Lead / Pluck / Arp — very short percussive
-    case 5:
-      synth = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2.5, modulationIndex: 3, oscillator: { type: "sawtooth" }, modulation: { type: "square" }, envelope: { attack: 0.002, decay: 0.06, sustain: 0.05, release: 0.08 }, modulationEnvelope: { attack: 0.005, decay: 0.02, sustain: 0.1, release: 0.05 } });
+    }
+
+    // ── 5: FX (risers, impacts) ──
+    case 5: {
+      const chain = getChannelChain(channel);
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 2.5, modulationIndex: 3,
+        oscillator: { type: "sawtooth" },
+        modulation: { type: "square" },
+        envelope: { attack: 0.002, decay: 0.06, sustain: 0.05, release: 0.08 },
+        modulationEnvelope: { attack: 0.005, decay: 0.02, sustain: 0.1, release: 0.05 },
+      });
+      chain.eq.low.value = -8;
+      chain.eq.high.value = 6;
+      chain.gain.gain.value = 0.5;
+      synth.connect(chain.eq);
       break;
-    // Melody — clear bright lead (PolySynth + Synth, not FM)
-    case 6:
-      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "sawtooth" }, envelope: { attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.3 }, volume: 2 });
+    }
+
+    // ── 6: MELODY — clear bright lead ──
+    case 6: {
+      const chain = getChannelChain(channel, { threshold: -14, ratio: 2 });
+      synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "sawtooth" },
+        envelope: { attack: 0.008, decay: 0.2, sustain: 0.4, release: 0.4 },
+      });
+      chain.eq.low.value = -2;
+      chain.eq.mid.value = 4;
+      chain.eq.high.value = 3;
+      chain.gain.gain.value = 0.85;
+      const melDelay = new Tone.FeedbackDelay("8n", 0.2);
+      synth.connect(melDelay);
+      melDelay.connect(ensureCtx().reverb);
+      synth.connect(chain.eq);
       break;
-    default:
-      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.005, decay: 0.08, sustain: 0.15, release: 0.15 } });
+    }
+
+    default: {
+      const chain = getChannelChain(channel);
+      synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.005, decay: 0.08, sustain: 0.15, release: 0.15 },
+      });
+      synth.connect(chain.eq);
+    }
   }
 
-  connectToMaster(synth, channel);
   ctx.channelInstruments[channel] = synth;
   return synth;
 }
@@ -137,10 +229,33 @@ function scheduleNote(note: MidiNote, bpm: number) {
   Tone.Transport.schedule((time) => {
     if (synth instanceof Tone.MembraneSynth || synth instanceof Tone.NoiseSynth || synth instanceof Tone.MetalSynth) {
       (synth as any).triggerAttackRelease?.(midiToFrequency(note.pitch), durSeconds, time, note.velocity);
-    } else if (synth instanceof Tone.PolySynth) {
+      // Extra tone layer for snare
+      if ((synth as any)._toneLayer) {
+        (synth as any)._toneLayer.triggerAttackRelease(midiToFrequency(note.pitch), durSeconds, time, note.velocity * 0.5);
+      }
+    } else if (synth instanceof Tone.PolySynth || synth instanceof Tone.MonoSynth) {
+      synth.triggerAttackRelease(note.pitch, durSeconds, time, note.velocity);
+    } else if (synth && typeof synth.triggerAttackRelease === "function") {
       synth.triggerAttackRelease(note.pitch, durSeconds, time, note.velocity);
     }
   }, note.startTime.toString());
+}
+
+function scheduleSidechainPumping(midi: MidiData) {
+  const ctx = ensureCtx();
+  for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
+  _sidechainScheduleIds = [];
+
+  const kickTrack = midi.tracks.find((t) => t.channel === 0);
+  const kickTimes = kickTrack?.notes.map((n) => n.startTime) ?? [];
+
+  for (const time of kickTimes) {
+    const id = Tone.Transport.schedule(() => {
+      ctx.sidechainBus.gain.rampTo(0.25, 0.005);
+      ctx.sidechainBus.gain.rampTo(1, 0.18);
+    }, time.toString());
+    _sidechainScheduleIds.push(id);
+  }
 }
 
 export function setLoop(enabled: boolean) {
@@ -150,6 +265,7 @@ export function setLoop(enabled: boolean) {
 export async function playMidi(midi: MidiData): Promise<void> {
   if (typeof window === "undefined") return;
   await initAudio();
+  const ctx = ensureCtx();
 
   Tone.Transport.stop();
   Tone.Transport.cancel();
@@ -158,10 +274,7 @@ export async function playMidi(midi: MidiData): Promise<void> {
 
   const totalBeats = midi.totalBeats || 16;
 
-  // Reset sidechain bus gain
-  ensureCtx().sidechainBus.gain.value = 1;
-
-  // Schedule sidechain pumping if kick channel exists
+  ctx.sidechainBus.gain.value = 1;
   if (midi.tracks.some((t) => t.channel === 0 && t.notes.length > 0)) {
     scheduleSidechainPumping(midi);
   }
@@ -199,7 +312,6 @@ export function stopMusic() {
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
   isLooping = false;
-  // Clear sidechain schedules
   for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
   _sidechainScheduleIds = [];
   _ctx.sidechainBus.gain.value = 1;
