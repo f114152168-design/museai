@@ -42,30 +42,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ code, prompt });
     }
 
-    // Melody-only generation
+    // Melody + accompaniment generation
     if (mode === "melody") {
       const tierVal = (tier === "paid" ? "paid" : "free") as "free" | "paid";
       let midi: Awaited<ReturnType<typeof generateMidiFromPrompt>>;
 
       if (isOpenAIConfigured()) {
-        midi = await generateMelodyFromPrompt(prompt, tierVal);
+        // AI: generate full song (melody + backing)
+        midi = await generateMidiFromPrompt(prompt, tierVal);
       } else {
-        // Fallback: algorithmic melody from prompt
-        const genre = prompt.toLowerCase().includes("techno") ? "techno"
-          : prompt.toLowerCase().includes("trance") ? "trance"
-          : "house";
-        midi = generateMelody({
-          key: "C", scale: "minor",
-          complexity: 0.6, noteLength: 0.5,
-          bpm: bpm ?? 128, bars: tierVal === "paid" ? 16 : 8,
-          genre,
-        });
+        // Fallback: song generator (melody + drums/bass/chords)
+        midi = generateSongFromPrompt(prompt, tierVal);
       }
 
       // Ensure duration limits
       if (tier === "free") {
         const maxFreeBeats = 32;
         if (midi.totalBeats > maxFreeBeats) midi.totalBeats = maxFreeBeats;
+        midi = loopMidi(midi, 8);
       }
 
       return NextResponse.json({ type: "midi", data: midi, prompt });
