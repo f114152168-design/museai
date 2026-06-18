@@ -2,7 +2,10 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useProjectStore } from "@/lib/store";
-import { playMidi, stopMusic, setLoop, initAudio } from "@/lib/synth";
+import {
+  playMidi, stopMusic, pauseMidi, resumeMidi, seekToBeat,
+  setLoop, initAudio, getCurrentBeat, isPaused as getIsPaused,
+} from "@/lib/synth";
 import { getNoteName, getDurationSeconds, type MidiData, type MidiNote } from "@/lib/midi";
 
 const CHANNEL_COLORS = ["#7c3aed","#ef4444","#f59e0b","#10b981","#06b6d4","#f97316","#ec4899","#8b5cf6","#14b8a6","#6366f1"];
@@ -16,6 +19,44 @@ const NOTE_H = 10;
 const LANE_PAD = 6;
 const PX_PER_BEAT = 48;
 
+/** Merge all project tracks into a single MidiData for timeline display */
+function mergeTracks(tracks: { midiData?: string }[]): MidiData | null {
+  const allNotes: MidiNote[] = [];
+  let bpm = 120;
+  let totalBeats = 32;
+
+  for (const track of tracks) {
+    if (!track.midiData) continue;
+    try {
+      const midi = JSON.parse(track.midiData) as MidiData;
+      if (midi.bpm) bpm = midi.bpm;
+      if (midi.totalBeats && midi.totalBeats > totalBeats) totalBeats = midi.totalBeats;
+      for (const t of midi.tracks) {
+        allNotes.push(...t.notes);
+      }
+    } catch {}
+  }
+
+  if (allNotes.length === 0) return null;
+
+  // Group notes by channel
+  const channelMap = new Map<number, MidiNote[]>();
+  for (const note of allNotes) {
+    const ch = note.channel ?? 0;
+    if (!channelMap.has(ch)) channelMap.set(ch, []);
+    channelMap.get(ch)!.push(note);
+  }
+
+  const mergedTracks = Array.from(channelMap.entries()).map(([ch, notes]) => ({
+    name: ["Kick","Snare","HiHat","Bass","Chord","FX","Melody"][ch] ?? `Ch ${ch}`,
+    channel: ch,
+    instrument: "",
+    notes: notes.sort((a, b) => a.startTime - b.startTime),
+  }));
+
+  return { bpm, totalBeats, tracks: mergedTracks };
+}
+
 function getNoteRange(tracks: MidiData["tracks"]): { low: number; high: number } {
   let low = 127, high = 0;
   for (const t of tracks) {
@@ -26,6 +67,12 @@ function getNoteRange(tracks: MidiData["tracks"]): { low: number; high: number }
   }
   if (low > high) { low = 36; high = 84; }
   return { low: Math.max(0, low - 2), high: Math.min(127, high + 2) };
+}
+
+function formatBeat(beat: number): string {
+  const bar = Math.floor(beat / 4) + 1;
+  const beatInBar = Math.floor(beat % 4) + 1;
+  return `${bar}:${beatInBar}`;
 }
 
 export function TimelineMode({ projectId }: { projectId: string }) {
@@ -44,12 +91,11 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
   const [showNoteNames, setShowNoteNames] = useState(true);
 
   const [midi, setMidi] = useState<MidiData | null>(null);
-  // Reactive to project.tracks — picks up tracks added by MelodyGenerator etc.
+
+  // Reactive to project.tracks — merge ALL tracks
   useEffect(() => {
-    for (let i = project.tracks.length - 1; i >= 0; i--) {
-      const d = project.tracks[i].midiData;
-      if (d) try { setMidi(JSON.parse(d) as MidiData); return; } catch {}
-    }
+    const merged = mergeTracks(project.tracks);
+    if (merged) setMidi(merged);
   }, [project.tracks]);
 
   const totalBeats = midi?.totalBeats ?? 16;
@@ -143,14 +189,12 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
       const lane = lanes[i];
       const y = TITLE_H + RULER_H + i * laneH;
 
-      // Key labels
       for (let p = 0; p < rangeSize; p++) {
         const pitch = noteRange.high - p;
         const ny = y + LANE_PAD + p * NOTE_H;
         const isWhite = [0,2,4,5,7,9,11].includes(pitch % 12);
         const isC = pitch % 12 === 0;
 
-        // Key bg
         ctx.fillStyle = isWhite ? "#1a1a2e" : "#0f0f1a";
         ctx.fillRect(TRACK_W, ny, KEY_W, NOTE_H);
 
@@ -162,7 +206,6 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
         }
       }
 
-      // Piano roll grid lines (horizontal)
       for (let p = 0; p < rangeSize; p++) {
         const ny = y + LANE_PAD + p * NOTE_H;
         ctx.strokeStyle = "#2a2a3e";
@@ -172,8 +215,6 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
     }
 
     // Vertical beat lines
-    ctx.strokeStyle = "#2a2a3e";
-    ctx.lineWidth = 0.5;
     for (let b = 0; b < totalBeats; b++) {
       const bx = plX + b * PX_PER_BEAT;
       if (b % 4 === 0) { ctx.strokeStyle = "#4a4a6a"; ctx.lineWidth = 1; }
@@ -225,7 +266,7 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
     }
 
     // ── Play position line ──
-    if (isPlaying) {
+    if (isPlaying || getIsPaused()) {
       const posX = plX + (playBeat / totalBeats) * plWidth;
       ctx.strokeStyle = "#22c55e";
       ctx.lineWidth = 2;
@@ -234,29 +275,37 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
 
   }, [midi, cvsWidth, cvsHeight, lanes, tracks, bars, isPlaying, playBeat, noteRange, rangeSize, showNoteNames, plWidth, totalBeats]);
 
+  // Playhead animation loop
+  useEffect(() => {
+    if (!isPlaying) return;
+    const animate = () => {
+      setPlayBeat(getCurrentBeat());
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [isPlaying]);
+
   const handlePlay = useCallback(async () => {
     if (!midi) return;
     await initAudio();
     setLoop(loopOn);
     setIsPlaying(true);
-    setPlayBeat(0);
-
-    const durMs = getDurationSeconds(midi) * 1000;
-    const start = Date.now();
-
-    const animate = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / durMs, 1);
-      setPlayBeat(progress * totalBeats);
-      if (progress < 1) animRef.current = requestAnimationFrame(animate);
-    };
-    animRef.current = requestAnimationFrame(animate);
 
     await playMidi(midi);
-    cancelAnimationFrame(animRef.current);
     setIsPlaying(false);
     setPlayBeat(0);
-  }, [midi, totalBeats, loopOn]);
+  }, [midi, loopOn]);
+
+  const handlePause = useCallback(() => {
+    if (getIsPaused()) {
+      resumeMidi();
+      setIsPlaying(true);
+    } else {
+      pauseMidi();
+      setIsPlaying(false);
+    }
+  }, []);
 
   const handleStop = useCallback(() => {
     stopMusic();
@@ -264,6 +313,19 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
     setIsPlaying(false);
     setPlayBeat(0);
   }, []);
+
+  // Click on ruler to seek
+  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!midi) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const plX = TRACK_W + KEY_W;
+    if (x < plX) return;
+    const beat = ((x - plX) / PX_PER_BEAT);
+    const clampedBeat = Math.max(0, Math.min(totalBeats, beat));
+    seekToBeat(clampedBeat);
+    setPlayBeat(clampedBeat);
+  }, [midi, totalBeats]);
 
   const handleSave = useCallback(() => {
     if (!midi) return;
@@ -276,32 +338,63 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
 
   const toggleNoteName = () => setShowNoteNames(!showNoteNames);
 
+  const currentBar = Math.floor(playBeat / 4) + 1;
+  const currentBeatInBar = Math.floor(playBeat % 4) + 1;
+  const duration = midi ? getDurationSeconds(midi) : 0;
+  const currentTime = midi ? (playBeat / (midi.bpm / 60)) : 0;
+
   return (
     <div className="flex flex-col h-full bg-[#1a1a2e]">
-      {/* Floating Transport */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 bg-[#0f0f1a]/90 backdrop-blur rounded-lg border border-[#2a2a3e] px-2.5 py-1.5 shadow-xl">
-        <button onClick={isPlaying ? handleStop : handlePlay}
-          className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${isPlaying ? "bg-red-500 text-white" : "bg-green-500 text-black hover:bg-green-400"}`}>
-          {isPlaying ? "■" : "▶"}
+      {/* Transport bar */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-[#0f0f1a] border-b border-[#2a2a3e]">
+        {/* Play / Pause / Stop */}
+        <button onClick={isPlaying ? handlePause : handlePlay}
+          className={`px-3 py-1.5 rounded text-sm font-bold transition-colors ${isPlaying ? "bg-amber-500 text-black" : "bg-green-500 text-black hover:bg-green-400"}`}>
+          {isPlaying ? "⏸" : "▶"}
         </button>
+        <button onClick={handleStop}
+          className="px-3 py-1.5 rounded text-sm font-bold bg-[#252540] text-gray-400 hover:text-white transition-colors">
+          ■
+        </button>
+
+        {/* Loop */}
         <button onClick={() => { const v = !loopOn; setLoopOn(v); setLoop(v); }}
-          className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${loopOn ? "bg-amber-500 text-black" : "bg-[#252540] text-gray-400"}`}>
+          className={`px-2 py-1.5 rounded text-xs font-bold transition-colors ${loopOn ? "bg-amber-500 text-black" : "bg-[#252540] text-gray-400"}`}>
           🔁
         </button>
-        <span className="text-[#3b82f6] text-xs font-mono font-bold">{midi?.bpm ?? 120}</span>
-        <span className="text-[#22c55e] text-xs font-mono">{getDurationSeconds(midi ?? { bpm: 120, totalBeats: 16 } as MidiData).toFixed(0)}s</span>
+
+        <div className="w-px h-5 bg-[#2a2a3e] mx-1" />
+
+        {/* Position display */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-green-400 text-xs font-mono font-bold min-w-[40px]">{formatBeat(playBeat)}</span>
+          <span className="text-gray-500 text-xs">/</span>
+          <span className="text-gray-400 text-xs font-mono">{bars}</span>
+        </div>
+
+        <div className="w-px h-5 bg-[#2a2a3e] mx-1" />
+
+        {/* BPM + Duration */}
+        <span className="text-[#3b82f6] text-xs font-mono font-bold">{midi?.bpm ?? 120} BPM</span>
+        <span className="text-gray-500 text-xs font-mono">{Math.floor(duration)}s</span>
+
+        <div className="flex-1" />
+
+        {/* Note names toggle */}
         <button onClick={toggleNoteName}
           className={`px-2 py-1 rounded text-[10px] font-medium ${showNoteNames ? "bg-blue-600 text-white" : "bg-[#252540] text-gray-400"}`}>
-          🎹
+          🎹 音名
         </button>
+
+        {/* Save */}
         {midi && (
-          <button onClick={handleSave} className="ml-1 px-2 py-1 rounded text-[10px] bg-blue-600 text-white hover:bg-blue-500 font-medium">
+          <button onClick={handleSave} className="px-2 py-1 rounded text-[10px] bg-blue-600 text-white hover:bg-blue-500 font-medium">
             儲存
           </button>
         )}
       </div>
 
-      {/* Canvas — also accepts drops from MelodyGenerator */}
+      {/* Canvas — click to seek, accepts drops */}
       <div className="flex-1 overflow-auto scrollbar-thin"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
         onDrop={(e) => {
@@ -320,7 +413,8 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
             setMidi(dropped);
           } catch {}
         }}>
-        <canvas ref={canvasRef} width={cvsWidth} height={cvsHeight} className="block" style={{ cursor: "crosshair" }} />
+        <canvas ref={canvasRef} width={cvsWidth} height={cvsHeight} className="block" style={{ cursor: "crosshair" }}
+          onClick={handleCanvasClick} />
       </div>
 
       {/* Legend */}

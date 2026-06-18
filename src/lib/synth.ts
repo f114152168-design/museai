@@ -15,6 +15,8 @@ let _ctx: {
 let initialized = false;
 let isLooping = false;
 let _sidechainScheduleIds: number[] = [];
+let _currentMidi: MidiData | null = null;
+let _isPaused = false;
 
 function ensureCtx() {
   if (_ctx) return _ctx;
@@ -272,6 +274,9 @@ export async function playMidi(midi: MidiData): Promise<void> {
   Tone.Transport.bpm.value = midi.bpm;
   Tone.Transport.position = 0;
 
+  _currentMidi = midi;
+  _isPaused = false;
+
   const totalBeats = midi.totalBeats || 16;
 
   ctx.sidechainBus.gain.value = 1;
@@ -312,6 +317,8 @@ export function stopMusic() {
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
   isLooping = false;
+  _isPaused = false;
+  _currentMidi = null;
   for (const id of _sidechainScheduleIds) Tone.Transport.clear(id);
   _sidechainScheduleIds = [];
   _ctx.sidechainBus.gain.value = 1;
@@ -320,6 +327,46 @@ export function stopMusic() {
     if (inst && "disconnect" in inst) inst.disconnect();
     delete _ctx!.channelInstruments[Number(key)];
   });
+}
+
+/** Pause playback, preserving position */
+export function pauseMidi() {
+  if (typeof window === "undefined") return;
+  if (!_isPaused) {
+    Tone.Transport.pause();
+    _isPaused = true;
+  }
+}
+
+/** Resume from paused position */
+export async function resumeMidi() {
+  if (typeof window === "undefined") return;
+  if (_isPaused && _currentMidi) {
+    _isPaused = false;
+    Tone.Transport.start();
+  }
+}
+
+/** Seek to a specific beat position */
+export function seekToBeat(beat: number) {
+  if (typeof window === "undefined") return;
+  Tone.Transport.position = beat;
+}
+
+/** Get current playback position in beats */
+export function getCurrentBeat(): number {
+  if (typeof window === "undefined") return 0;
+  const pos = Tone.Transport.position;
+  if (typeof pos === "string") {
+    const parts = pos.split(":").map(Number);
+    return (parts[0] ?? 0) * 4 + (parts[1] ?? 0) + (parts[2] ?? 0) / 4;
+  }
+  return Number(pos) || 0;
+}
+
+/** Check if currently paused */
+export function isPaused(): boolean {
+  return _isPaused;
 }
 
 export function isAudioInitialized(): boolean {
