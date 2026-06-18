@@ -42,6 +42,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [currentMidi, setCurrentMidi] = useState<MidiData | null>(null);
+  const [melodyMode, setMelodyMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,7 +72,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, mode: "chat", tier }),
+        body: JSON.stringify({ prompt, mode: melodyMode ? "melody" : "chat", tier }),
       });
 
       if (!res.ok) {
@@ -269,7 +270,9 @@ export function ChatMode({ projectId }: { projectId: string }) {
                 <div className="w-1 h-3 bg-purple-500 rounded-full animate-waveform" style={{ animationDelay: "0.2s" }} />
                 <span className="text-sm text-gray-500 ml-1">
                   {apiStatus.configured
-                    ? `${tier === "paid" ? "AI 生成編曲中..." : "AI 生成循環中..."}`
+                    ? melodyMode
+                      ? "AI 生成旋律中..."
+                      : `${tier === "paid" ? "AI 生成編曲中..." : "AI 生成循環中..."}`
                     : "產生 MIDI 示範..."}
                 </span>
               </div>
@@ -282,6 +285,16 @@ export function ChatMode({ projectId }: { projectId: string }) {
       {/* Input */}
       <div className="border-t px-4 pt-3 pb-2 bg-white">
         <div className="flex flex-wrap gap-1.5 mb-2">
+          <button
+            onClick={() => setMelodyMode(!melodyMode)}
+            className={`px-2.5 py-1 rounded-full border text-xs transition-colors ${
+              melodyMode
+                ? "bg-green-600 text-white border-green-600"
+                : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+            }`}
+          >
+            {melodyMode ? "🎵 旋律模式 ON" : "旋律模式"}
+          </button>
           {PROMPT_PRESETS.map((preset) => (
             <button key={preset.label} onClick={() => setInput(preset.prompt)}
               className="px-2.5 py-1 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-xs hover:bg-purple-100 hover:border-purple-300 transition-colors">
@@ -295,7 +308,7 @@ export function ChatMode({ projectId }: { projectId: string }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder={`${tier === "paid" ? "描述完整編曲" : "描述循環片段"}，AI 會生成 MIDI...`}
+            placeholder={melodyMode ? "描述你想要的旋律，AI 會生成旋律..." : `${tier === "paid" ? "描述完整編曲" : "描述循環片段"}，AI 會生成 MIDI...`}
             className="flex-1 px-4 py-2.5 rounded-lg border text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500"
             disabled={isGenerating}
           />

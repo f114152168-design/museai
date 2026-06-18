@@ -130,6 +130,80 @@ export async function generateMidiFromPrompt(
   return data;
 }
 
+const MELODY_SYSTEM_PROMPT = `你是 Museai 的 AI 旋律助手。使用者描述想要的旋律，你要輸出單一旋律軌道的 MIDI 資料。
+
+規則：
+1. 只輸出一個軌道：旋律（channel 6）
+2. 旋律必須有清晰的樂句結構：2-4 小節為一個短句，重複 2-4 次
+3. 使用音階內的音符，相鄰音符距離不超過 5 個音階度數
+4. 強調 chord tone（根音、三度、五度）作為短句的起點和終點
+5. 節奏要有變化：混合 8 分音符和 4 分音符，避免全部一樣長
+6. 每個短句結尾加長音（1-2 拍），創造呼吸感
+7. 旋律範圍：MIDI 48-96（C3-C7），建議集中在 60-84
+8. velocity 0.7-1.0，有強弱變化
+9. 4/4 拍
+
+請嚴格以 JSON 格式回覆，不要加任何其他文字：
+{
+  "bpm": 128,
+  "tracks": [
+    {
+      "name": "Melody",
+      "channel": 6,
+      "instrument": "lead",
+      "notes": [
+        { "pitch": 60, "startTime": 0, "duration": 0.5, "velocity": 0.85, "channel": 6 }
+      ]
+    }
+  ],
+  "totalBeats": 32,
+  "tier": "free",
+  "sections": [
+    { "name": "melody", "bars": 8, "instruments": ["lead"], "description": "旋律" }
+  ]
+}
+
+範例旋律結構（A-B-A-B）：
+- 短句 A（0-8 拍）：上行琶音 + 長音結尾
+- 短句 B（8-16 拍）：下行音階 + 長音結尾
+- 短句 A'（16-24 拍）：A 的變化（八度偏移）
+- 短句 B'（24-32 拍）：B 的變化（結尾不同）`;
+
+export async function generateMelodyFromPrompt(
+  prompt: string,
+  tier: "free" | "paid" = "free"
+): Promise<MidiData> {
+  const openai = getOpenAI();
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: MELODY_SYSTEM_PROMPT },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.7,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("OpenAI 沒有回傳內容");
+
+  const data = JSON.parse(content) as MidiData;
+
+  if (!data.bpm) data.bpm = 120;
+  if (!data.tracks) data.tracks = [];
+  if (!data.totalBeats) data.totalBeats = tier === "paid" ? 96 : 32;
+
+  // Ensure melody is on channel 6
+  for (const track of data.tracks) {
+    for (const note of track.notes) {
+      note.channel = 6;
+    }
+  }
+
+  return data;
+}
+
 const PAID_LIVECODE_PROMPT_PREFIX = `你是 Museai Live Coding 助手（Pro 方案）。`;
 
 const FREE_LIVECODE_PROMPT_PREFIX = `你是 Museai Live Coding 助手（Free 方案，只能產生 8 小節循環）。`;

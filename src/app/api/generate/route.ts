@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateMidiFromPrompt, generateLiveCodeFromPrompt, isOpenAIConfigured } from "@/lib/openai";
+import { generateMidiFromPrompt, generateMelodyFromPrompt, generateLiveCodeFromPrompt, isOpenAIConfigured } from "@/lib/openai";
 import { generateFreeMidi, generatePaidMidi, generateStyleMidi, loopMidi, quantizeMidi, pluckMidi, arpeggiateMidi, addFourOnFloor } from "@/lib/midi";
 import { generateSongFromPrompt } from "@/lib/song-generator";
+import { generateMelody } from "@/lib/melody-generator";
 
 type PostProcess = {
   quantize?: number;
@@ -39,6 +40,35 @@ export async function POST(req: NextRequest) {
       }
       const code = await generateLiveCodeFromPrompt(prompt, (tier as "free" | "paid") ?? "free", bpm ?? 120);
       return NextResponse.json({ code, prompt });
+    }
+
+    // Melody-only generation
+    if (mode === "melody") {
+      const tierVal = (tier === "paid" ? "paid" : "free") as "free" | "paid";
+      let midi: Awaited<ReturnType<typeof generateMidiFromPrompt>>;
+
+      if (isOpenAIConfigured()) {
+        midi = await generateMelodyFromPrompt(prompt, tierVal);
+      } else {
+        // Fallback: algorithmic melody from prompt
+        const genre = prompt.toLowerCase().includes("techno") ? "techno"
+          : prompt.toLowerCase().includes("trance") ? "trance"
+          : "house";
+        midi = generateMelody({
+          key: "C", scale: "minor",
+          complexity: 0.6, noteLength: 0.5,
+          bpm: bpm ?? 128, bars: tierVal === "paid" ? 16 : 8,
+          genre,
+        });
+      }
+
+      // Ensure duration limits
+      if (tier === "free") {
+        const maxFreeBeats = 32;
+        if (midi.totalBeats > maxFreeBeats) midi.totalBeats = maxFreeBeats;
+      }
+
+      return NextResponse.json({ type: "midi", data: midi, prompt });
     }
 
     // Generate MIDI — song generator produces full arrangement from prompt text
