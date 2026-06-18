@@ -2,15 +2,14 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useProjectStore } from "@/lib/store";
-import { playMidi, stopMusic } from "@/lib/synth";
+import { playMidi, stopMusic, pauseMidi, resumeMidi, initAudio, isPaused as getIsPaused } from "@/lib/synth";
 import { useApiStatus } from "@/hooks/use-api-status";
 import { useTier } from "@/hooks/use-tier";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
 import { renderMidiToWav, downloadBlob } from "@/lib/audio-export";
-import { getDurationSeconds } from "@/lib/midi";
+import { getDurationSeconds, type MidiData } from "@/lib/midi";
 import { TIER_LIMITS } from "@/lib/billing";
 import { PROMPT_PRESETS } from "@/lib/presets";
-import type { MidiData } from "@/lib/midi";
 
 interface Message {
   role: "user" | "assistant";
@@ -20,7 +19,7 @@ interface Message {
   type?: "text" | "midi" | "error";
 }
 
-export function ChatMode({ projectId }: { projectId: string }) {
+export function ChatMode({ projectId, onSwitchToTimeline }: { projectId: string; onSwitchToTimeline?: () => void }) {
   const addTrack = useProjectStore((s) => s.addTrack);
   const addCommit = useProjectStore((s) => s.addCommit);
   const apiStatus = useApiStatus();
@@ -281,6 +280,43 @@ export function ChatMode({ projectId }: { projectId: string }) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Mini Timeline — shows current generated MIDI */}
+      {currentMidi && (
+        <div className="border-t bg-[#1a1a2e] px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-gray-400 font-medium">🎛️ 時間軸預覽</span>
+            <span className="text-[10px] text-gray-500 font-mono">{currentMidi.bpm} BPM</span>
+            <span className="text-[10px] text-gray-500 font-mono">{Math.floor(getDurationSeconds(currentMidi))}s</span>
+            <div className="flex-1" />
+            {onSwitchToTimeline && (
+              <button onClick={onSwitchToTimeline}
+                className="px-2.5 py-1 rounded text-[10px] bg-purple-600 text-white hover:bg-purple-500 font-medium transition-colors">
+                展開時間軸 →
+              </button>
+            )}
+          </div>
+          <div className="rounded-lg overflow-hidden bg-[#0f0f1a] border border-[#2a2a3e]">
+            <MidiRoll midi={currentMidi} />
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={() => {
+                if (getIsPaused()) { resumeMidi(); } else { initAudio().then(() => playMidi(currentMidi)); }
+              }}
+              className="px-3 py-1 rounded bg-green-500 text-black text-xs font-bold hover:bg-green-400">
+              {getIsPaused() ? "▶ 繼續" : "▶ 播放"}
+            </button>
+            <button onClick={() => { pauseMidi(); }}
+              className="px-3 py-1 rounded bg-amber-500 text-black text-xs font-bold hover:bg-amber-400">
+              ⏸ 暫停
+            </button>
+            <button onClick={handleStop}
+              className="px-3 py-1 rounded bg-[#252540] text-gray-400 text-xs font-bold hover:text-white">
+              ■ 停止
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t px-4 pt-3 pb-2 bg-white">
