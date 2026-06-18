@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
+import { useTier } from "@/hooks/use-tier";
 
 const COMPARISON = {
   headers: ["功能", "Free", "Pro"],
@@ -23,6 +25,16 @@ const COMPARISON = {
 
 export default function PricingPage() {
   const { data: session } = useSession();
+  const router = useRouter();
+  const { tier, redeem } = useTier();
+  const isPro = tier === "paid";
+
+  const handleUpgrade = () => {
+    const result = redeem("pro");
+    if (result.success) {
+      router.push("/dashboard");
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col">
@@ -75,10 +87,18 @@ export default function PricingPage() {
               <li className="flex items-start gap-3">✓ 完整編曲（前奏/主歌/副歌/橋段）</li>
               <li className="flex items-start gap-3">✓ 商業使用授權</li>
             </ul>
-            <button disabled className="block w-full text-center py-3 rounded-xl bg-purple-600 text-white font-medium opacity-60 cursor-not-allowed">
-              即將開放
-            </button>
-            <p className="text-xs text-gray-400 text-center mt-2">金流串接中，目前可在 .env 自由切換體驗</p>
+            {isPro ? (
+              <Link href="/dashboard"
+                className="block text-center py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-500 transition-colors">
+                ✓ 已升級 Pro
+              </Link>
+            ) : (
+              <button onClick={handleUpgrade}
+                className="block w-full text-center py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-500 transition-colors">
+                立即升級
+              </button>
+            )}
+            <p className="text-xs text-gray-400 text-center mt-2">目前免費體驗，點擊即可升級 Pro</p>
           </div>
         </div>
       </section>
