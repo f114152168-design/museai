@@ -93,6 +93,7 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
     complexity: moodAdj.complexity,
     noteLength: moodAdj.noteLength,
     bpm, bars: totalBars,
+    genre,
   };
   const melodyMidi = generateMelody(melodyParams);
   const melodyNotes = melodyMidi.tracks[0]?.notes ?? [];
@@ -134,7 +135,7 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
     const hasDrums = energy > 0.3;
     const hasBass = energy > 0.4;
     const hasChords = energy > 0.3;
-    const hasMelody = energy > 0.5;
+    const hasMelody = energy > 0.2;
     const isBuild = section.name.includes("build");
     const isDrop = section.name === "drop";
     const isIntro = section.name === "intro";

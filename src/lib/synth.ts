@@ -190,17 +190,17 @@ function getChannelSynth(channel: number) {
       break;
     }
 
-    // ── 6: MELODY — clear bright lead ──
+    // ── 6: MELODY — bright square wave lead ──
     case 6: {
       const chain = getChannelChain(channel, { threshold: -14, ratio: 2 });
       synth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: "sawtooth" },
-        envelope: { attack: 0.008, decay: 0.2, sustain: 0.4, release: 0.4 },
+        oscillator: { type: "square" },
+        envelope: { attack: 0.003, decay: 0.15, sustain: 0.35, release: 0.3 },
       });
       chain.eq.low.value = -2;
-      chain.eq.mid.value = 4;
-      chain.eq.high.value = 3;
-      chain.gain.gain.value = 0.85;
+      chain.eq.mid.value = 5;
+      chain.eq.high.value = 4;
+      chain.gain.gain.value = 1.3;
       const melDelay = new Tone.FeedbackDelay("8n", 0.2);
       synth.connect(melDelay);
       melDelay.connect(ensureCtx().reverb);
