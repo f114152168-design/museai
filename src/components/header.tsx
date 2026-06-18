@@ -84,6 +84,9 @@ export function Header() {
                   )}
                 </div>
               )}
+              {!isFree && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-600 text-white font-medium">Pro</span>
+              )}
               <span className="text-sm text-gray-500 hidden sm:block">{session.user?.email}</span>
               <button onClick={() => signOut()} className="text-sm px-3 py-1.5 rounded-lg border text-gray-600 hover:bg-gray-50 transition-colors">
                 登出
