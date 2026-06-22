@@ -6,16 +6,18 @@ import { useProjectStore } from "@/lib/store";
 import { ChatMode } from "@/components/chat-mode";
 import { TimelineMode } from "@/components/timeline-mode";
 import { LiveCodingMode } from "@/components/live-coding-mode";
+import { RemixMode } from "@/components/remix-mode";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
 import { useTier } from "@/hooks/use-tier";
 import { VersionHistory } from "@/components/version-history";
 
-type Mode = "chat" | "timeline" | "livecode";
+type Mode = "chat" | "timeline" | "livecode" | "remix";
 
 const modes: { key: Mode; label: string; icon: string }[] = [
   { key: "chat", label: "聊天生成", icon: "💬" },
   { key: "timeline", label: "時間軸", icon: "🎛️" },
+  { key: "remix", label: "Remix", icon: "🎚️" },
   { key: "livecode", label: "即時編程", icon: "⌨️" },
 ];
 
@@ -53,6 +55,7 @@ export default function ProjectEditor() {
     chat: ChatMode,
     timeline: TimelineMode,
     livecode: LiveCodingMode,
+    remix: RemixMode,
   }[mode];
 
   return (
