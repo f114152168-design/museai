@@ -55,6 +55,17 @@ export async function POST(req: NextRequest) {
         midi = generateSongFromPrompt(prompt, tierVal);
       }
 
+      // Safety net: remap channel 5 melody/lead tracks to channel 6 (melody synth)
+      for (const track of midi.tracks) {
+        if (track.channel === 5) {
+          const name = track.name.toLowerCase();
+          if (name.includes("lead") || name.includes("melody") || name.includes("主旋律")) {
+            track.channel = 6;
+            for (const note of track.notes) note.channel = 6;
+          }
+        }
+      }
+
       // Ensure duration limits
       if (tier === "free") {
         const maxFreeBeats = 32;
@@ -73,11 +84,20 @@ export async function POST(req: NextRequest) {
     if (isOpenAIConfigured()) {
       midi = await generateMidiFromPrompt(prompt, tierVal);
     } else if (style) {
-      // EDM style generator (when preset button clicked)
       midi = generateStyleMidi(style, bpm ?? 128);
     } else {
-      // Prompt → full song arrangement (parses prompt for genre/mood/key/bpm)
       midi = generateSongFromPrompt(prompt, tierVal);
+    }
+
+    // Safety net: remap channel 5 melody/lead tracks to channel 6 (melody synth)
+    for (const track of midi.tracks) {
+      if (track.channel === 5) {
+        const name = track.name.toLowerCase();
+        if (name.includes("lead") || name.includes("melody") || name.includes("主旋律")) {
+          track.channel = 6;
+          for (const note of track.notes) note.channel = 6;
+        }
+      }
     }
 
     // Apply EDM post-processing

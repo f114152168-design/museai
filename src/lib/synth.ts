@@ -197,12 +197,12 @@ function getChannelSynth(channel: number) {
       const chain = getChannelChain(channel, { threshold: -14, ratio: 2 });
       synth = new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: "square" },
-        envelope: { attack: 0.003, decay: 0.15, sustain: 0.35, release: 0.3 },
+        envelope: { attack: 0.003, decay: 0.2, sustain: 0.5, release: 0.4 },
       });
-      chain.eq.low.value = -2;
-      chain.eq.mid.value = 5;
-      chain.eq.high.value = 4;
-      chain.gain.gain.value = 1.3;
+      chain.eq.low.value = -3;
+      chain.eq.mid.value = 6;
+      chain.eq.high.value = 5;
+      chain.gain.gain.value = 1.6;
       const melDelay = new Tone.FeedbackDelay("8n", 0.2);
       synth.connect(melDelay);
       melDelay.connect(ensureCtx().reverb);

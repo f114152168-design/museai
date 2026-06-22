@@ -28,7 +28,7 @@ const FREE_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Free 方案）�
 4. HiHat 每半拍，力度交替強弱
 5. 貝斯走根音，每 2 拍一個
 6. 和弦用長音（duration: 4），每小節換一個
-7. 可選主旋律用 8 分音符
+7. 主旋律必須有！用 8 分音符，旋律要有起伏和重複
 8. 根據曲風調整節奏和音符選擇
 9. 不得超過 8 小節
 
@@ -47,7 +47,7 @@ const FREE_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Free 方案）�
   "totalBeats": 32,
   "tier": "free",
   "sections": [
-    { "name": "loop", "bars": 8, "instruments": ["kick","snare","hihat","bass"], "description": "循環" }
+    { "name": "loop", "bars": 8, "instruments": ["kick","snare","hihat","bass","melody"], "description": "循環" }
   ]
 }
 
@@ -57,7 +57,7 @@ const FREE_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Free 方案）�
 - 2: HiHat, 42=F#2(閉), 46=A#2(開)
 - 3: Bass, 建議 24-48 範圍
 - 4: Chord/Pad, 建議 48-72 範圍
-- 5: Lead/Arp, 建議 60-84 範圍`;
+- 6: Melody（主旋律）, 建議 60-84 範圍，這是必須的！`;
 
 const PAID_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Pro 方案）。使用者用自然語言描述音樂，你要輸出完整編曲的 MIDI 資料。
 
@@ -71,6 +71,7 @@ const PAID_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Pro 方案）。
 7. outro: 結尾（漸弱）
 8. 段落之間樂器配置要有層次感
 9. 4/4 拍，BPM 60-200
+10. 主旋律必須有！放在 channel 6
 
 請嚴格以 JSON 格式回覆：
 {
@@ -87,9 +88,9 @@ const PAID_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Pro 方案）。
   "sections": [
     { "name": "intro", "bars": 8, "instruments": ["pad"], "description": "導入" },
     { "name": "verse", "bars": 8, "instruments": ["kick","bass","pad"], "description": "主歌" },
-    { "name": "chorus", "bars": 8, "instruments": ["kick","snare","hihat","bass","lead"], "description": "副歌" },
+    { "name": "chorus", "bars": 8, "instruments": ["kick","snare","hihat","bass","melody"], "description": "副歌" },
     { "name": "bridge", "bars": 4, "instruments": ["pad","arp"], "description": "橋段" },
-    { "name": "chorus", "bars": 8, "instruments": ["kick","snare","hihat","bass","lead","pad"], "description": "高亢副歌" },
+    { "name": "chorus", "bars": 8, "instruments": ["kick","snare","hihat","bass","melody","pad"], "description": "高亢副歌" },
     { "name": "outro", "bars": 4, "instruments": ["pad"], "description": "結尾" }
   ]
 }
@@ -100,7 +101,7 @@ const PAID_SYSTEM_PROMPT = `你是 Museai 的 AI 作曲助手（Pro 方案）。
 - 2: HiHat/cymbal
 - 3: Bass
 - 4: Chord/Pad/Strings
-- 5: Lead/Arp/Pluck`;
+- 6: Melody（主旋律）, 建議 60-84 範圍，這是必須的！`;
 
 export async function generateMidiFromPrompt(
   prompt: string,

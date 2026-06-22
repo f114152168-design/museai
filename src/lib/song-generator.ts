@@ -218,7 +218,7 @@ export function generateSongFromPrompt(prompt: string, tier: "free" | "paid" = "
         if (note.startTime < secStartBeats || note.startTime >= secEndBeats) continue;
         allFx.push({
           ...note,
-          velocity: note.velocity * (0.5 + energy * 0.5),
+          velocity: Math.min(1, note.velocity * (0.7 + energy * 0.3)),
           channel: 6,
         });
       }
