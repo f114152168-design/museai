@@ -57,16 +57,22 @@ function mergeTracks(tracks: { midiData?: string }[]): MidiData | null {
   return { bpm, totalBeats, tracks: mergedTracks };
 }
 
-function getNoteRange(tracks: MidiData["tracks"]): { low: number; high: number } {
+function getNoteRange(notes: MidiNote[]): { low: number; high: number } {
   let low = 127, high = 0;
-  for (const t of tracks) {
-    for (const n of t.notes) {
-      if (n.pitch < low) low = n.pitch;
-      if (n.pitch > high) high = n.pitch;
-    }
+  for (const n of notes) {
+    if (n.pitch < low) low = n.pitch;
+    if (n.pitch > high) high = n.pitch;
   }
   if (low > high) { low = 36; high = 84; }
-  return { low: Math.max(0, low - 2), high: Math.min(127, high + 2) };
+  // Pad by 2 semitones each side, min range of 12 semitones
+  low = Math.max(0, low - 2);
+  high = Math.min(127, high + 2);
+  if (high - low < 11) {
+    const mid = (low + high) / 2;
+    low = Math.max(0, Math.floor(mid - 6));
+    high = Math.min(127, Math.ceil(mid + 6));
+  }
+  return { low, high };
 }
 
 function formatBeat(beat: number): string {
@@ -101,15 +107,20 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
   const totalBeats = midi?.totalBeats ?? 16;
   const bars = Math.ceil(totalBeats / 4);
   const tracks = midi?.tracks ?? [];
-  const noteRange = getNoteRange(tracks);
-  const rangeSize = noteRange.high - noteRange.low + 1;
-  const laneH = Math.max(rangeSize * NOTE_H + LANE_PAD * 2, 70);
-  const lanes = tracks.map((t, i) => ({
-    ...t,
-    color: CHANNEL_COLORS[t.channel] ?? CHANNEL_COLORS[i],
-    icon: CHANNEL_ICONS[t.channel] ?? "🎵",
-  }));
 
+  // Per-lane note ranges
+  const lanes = tracks.map((t, i) => {
+    const range = getNoteRange(t.notes);
+    return {
+      ...t,
+      color: CHANNEL_COLORS[t.channel] ?? CHANNEL_COLORS[i],
+      icon: CHANNEL_ICONS[t.channel] ?? "🎵",
+      noteRange: range,
+      rangeSize: range.high - range.low + 1,
+    };
+  });
+
+  const laneH = Math.max(...lanes.map(l => l.rangeSize * NOTE_H + LANE_PAD * 2), 70);
   const plWidth = totalBeats * PX_PER_BEAT + 40;
   const cvsWidth = TRACK_W + KEY_W + plWidth;
   const cvsHeight = TITLE_H + RULER_H + lanes.length * laneH + 20;
@@ -188,6 +199,7 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
     for (let i = 0; i < lanes.length; i++) {
       const lane = lanes[i];
       const y = TITLE_H + RULER_H + i * laneH;
+      const { noteRange, rangeSize } = lane;
 
       for (let p = 0; p < rangeSize; p++) {
         const pitch = noteRange.high - p;
@@ -247,7 +259,7 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
       for (const note of lane.notes) {
         const nx = plX + note.startTime * PX_PER_BEAT;
         const nw = Math.max(3, note.duration * PX_PER_BEAT - 1);
-        const pitchIdx = noteRange.high - note.pitch;
+        const pitchIdx = lane.noteRange.high - note.pitch;
         const ny = y + LANE_PAD + pitchIdx * NOTE_H;
 
         ctx.fillStyle = lane.color;
@@ -273,7 +285,7 @@ function Timeline({ project, projectId }: { project: ReturnType<typeof useProjec
       ctx.beginPath(); ctx.moveTo(posX, TITLE_H); ctx.lineTo(posX, cvsHeight); ctx.stroke();
     }
 
-  }, [midi, cvsWidth, cvsHeight, lanes, tracks, bars, isPlaying, playBeat, noteRange, rangeSize, showNoteNames, plWidth, totalBeats]);
+  }, [midi, cvsWidth, cvsHeight, lanes, tracks, bars, isPlaying, playBeat, showNoteNames, plWidth, totalBeats]);
 
   // Playhead animation loop
   useEffect(() => {
