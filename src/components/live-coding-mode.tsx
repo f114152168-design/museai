@@ -6,7 +6,7 @@ import { useProjectStore } from "@/lib/store";
 import { useApiStatus } from "@/hooks/use-api-status";
 import { playMidi, stopMusic } from "@/lib/synth";
 import { MidiRoll, MidiInfo, downloadMidiJson } from "@/components/midi-roll";
-import type { MidiData, MidiNote } from "@/lib/midi";
+import { getDurationSeconds, type MidiData, type MidiNote } from "@/lib/midi";
 import { generateFreeMidi, generatePaidMidi } from "@/lib/midi";
 import { getTier, setTier, TIER_LIMITS } from "@/lib/billing";
 import type { Tier } from "@/lib/billing";
@@ -59,6 +59,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
   const [aiPrompt, setAiPrompt] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const addTrack = useProjectStore((s) => s.addTrack);
+  const addCommit = useProjectStore((s) => s.addCommit);
   const apiStatus = useApiStatus();
 
   const addOutput = (msg: string) => {
@@ -130,6 +131,21 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
         playMidi: async (midi: MidiData) => {
           setLastMidi(midi);
           addOutput("▶ 播放 MIDI...");
+
+          // Save to project (sync with timeline)
+          addTrack(projectId, {
+            name: `Live Coding ${midi.bpm}BPM`,
+            type: "MIDI",
+            midiData: JSON.stringify(midi),
+            duration: getDurationSeconds(midi),
+            order: Date.now(),
+          });
+          addCommit(projectId, {
+            prompt: "即時編程",
+            midi,
+            type: "generate",
+          });
+
           await playMidi(midi);
           addOutput("✓ 播放完成");
         },
@@ -174,7 +190,7 @@ export function LiveCodingMode({ projectId }: { projectId: string }) {
     } finally {
       setTimeout(() => setIsPlaying(false), 500);
     }
-  }, [code, projectId, addTrack, apiStatus.configured]);
+  }, [code, projectId, addTrack, addCommit, apiStatus.configured]);
 
   const handleStop = () => {
     stopMusic();
