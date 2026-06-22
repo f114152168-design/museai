@@ -227,20 +227,19 @@ function getChannelSynth(channel: number) {
 function scheduleNote(note: MidiNote, bpm: number) {
   const synth = getChannelSynth(note.channel);
   const durSeconds = note.duration * (60 / bpm);
+  const freq = midiToFrequency(note.pitch);
+  const scheduleTime = note.startTime * (60 / bpm);
 
   Tone.Transport.schedule((time) => {
     if (synth instanceof Tone.MembraneSynth || synth instanceof Tone.NoiseSynth || synth instanceof Tone.MetalSynth) {
-      (synth as any).triggerAttackRelease?.(midiToFrequency(note.pitch), durSeconds, time, note.velocity);
-      // Extra tone layer for snare
+      (synth as any).triggerAttackRelease?.(freq, durSeconds, time, note.velocity);
       if ((synth as any)._toneLayer) {
-        (synth as any)._toneLayer.triggerAttackRelease(midiToFrequency(note.pitch), durSeconds, time, note.velocity * 0.5);
+        (synth as any)._toneLayer.triggerAttackRelease(freq, durSeconds, time, note.velocity * 0.5);
       }
-    } else if (synth instanceof Tone.PolySynth || synth instanceof Tone.MonoSynth) {
-      synth.triggerAttackRelease(note.pitch, durSeconds, time, note.velocity);
     } else if (synth && typeof synth.triggerAttackRelease === "function") {
-      synth.triggerAttackRelease(note.pitch, durSeconds, time, note.velocity);
+      synth.triggerAttackRelease(freq, durSeconds, time, note.velocity);
     }
-  }, note.startTime.toString());
+  }, scheduleTime);
 }
 
 function scheduleSidechainPumping(midi: MidiData) {
@@ -250,12 +249,13 @@ function scheduleSidechainPumping(midi: MidiData) {
 
   const kickTrack = midi.tracks.find((t) => t.channel === 0);
   const kickTimes = kickTrack?.notes.map((n) => n.startTime) ?? [];
+  const bpm = midi.bpm;
 
   for (const time of kickTimes) {
     const id = Tone.Transport.schedule(() => {
       ctx.sidechainBus.gain.rampTo(0.25, 0.005);
       ctx.sidechainBus.gain.rampTo(1, 0.18);
-    }, time.toString());
+    }, time * (60 / bpm));
     _sidechainScheduleIds.push(id);
   }
 }
@@ -294,6 +294,7 @@ export async function playMidi(midi: MidiData): Promise<void> {
   Tone.Transport.start();
 
   if (isLooping) {
+    const loopDuration = totalBeats * (60 / midi.bpm);
     return new Promise(() => {
       Tone.Transport.schedule(() => {
         Tone.Transport.position = 0;
@@ -302,7 +303,7 @@ export async function playMidi(midi: MidiData): Promise<void> {
             scheduleNote(note, midi.bpm);
           }
         }
-      }, totalBeats.toString());
+      }, loopDuration);
     });
   }
 
