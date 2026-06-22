@@ -125,8 +125,23 @@ export async function generateMidiFromPrompt(
   const data = JSON.parse(content) as MidiData;
 
   if (!data.bpm) data.bpm = 120;
-  if (!data.tracks) data.tracks = [];
+  if (!Array.isArray(data.tracks)) data.tracks = [];
   if (!data.totalBeats) data.totalBeats = tier === "paid" ? 96 : 32;
+
+  // Validate tracks have notes — if not, the caller should fall back
+  const totalNotes = data.tracks.reduce((s, t) => s + (t.notes?.length ?? 0), 0);
+  if (totalNotes === 0) {
+    console.warn("[openai] generateMidiFromPrompt: OpenAI returned 0 notes, tracks:", data.tracks.length);
+  }
+
+  // Ensure each track has required fields
+  data.tracks = data.tracks.filter((t) => {
+    if (!Array.isArray(t.notes) || t.notes.length === 0) return false;
+    if (typeof t.channel !== "number") t.channel = 0;
+    if (!t.name) t.name = `Track ${t.channel}`;
+    if (!t.instrument) t.instrument = "";
+    return true;
+  });
 
   return data;
 }
