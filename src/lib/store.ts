@@ -32,8 +32,17 @@ export interface Project {
   isPublic: boolean;
   tracks: Track[];
   commits: VersionCommit[];
+  chatMessages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  midiJson?: string;
+  type?: "text" | "midi" | "error";
 }
 
 export interface VersionCommit {
@@ -93,6 +102,9 @@ interface ProjectStore {
   addCommit: (projectId: string, commit: Omit<VersionCommit, "id" | "parentId" | "timestamp" | "message">) => VersionCommit;
   getCommits: (projectId: string) => VersionCommit[];
   restoreCommit: (projectId: string, commitId: string) => VersionCommit;
+  addChatMessage: (projectId: string, message: Omit<ChatMessage, "timestamp">) => void;
+  getChatMessages: (projectId: string) => ChatMessage[];
+  clearChatMessages: (projectId: string) => void;
 }
 
 const DEFAULT_PROJECTS: Project[] = [
@@ -106,6 +118,7 @@ const DEFAULT_PROJECTS: Project[] = [
     isPublic: false,
     tracks: [],
     commits: [],
+    chatMessages: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -129,6 +142,7 @@ export const useProjectStore = create<ProjectStore>()(
           isPublic: false,
           tracks: [],
           commits: [],
+          chatMessages: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -253,6 +267,34 @@ export const useProjectStore = create<ProjectStore>()(
 
       getCommits: (projectId) => {
         return get().getProject(projectId)?.commits ?? [];
+      },
+
+      addChatMessage: (projectId, message) => {
+        const msg: ChatMessage = {
+          ...message,
+          timestamp: new Date().toISOString(),
+        };
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId
+              ? { ...p, chatMessages: [...(p.chatMessages ?? []), msg], updatedAt: new Date().toISOString() }
+              : p
+          ),
+        }));
+      },
+
+      getChatMessages: (projectId) => {
+        return get().getProject(projectId)?.chatMessages ?? [];
+      },
+
+      clearChatMessages: (projectId) => {
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId
+              ? { ...p, chatMessages: [], updatedAt: new Date().toISOString() }
+              : p
+          ),
+        }));
       },
 
       restoreCommit: (projectId, commitId) => {
